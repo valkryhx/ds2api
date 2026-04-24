@@ -324,3 +324,30 @@ test('parseToolCalls rejects mismatched markup tags', () => {
   const calls = parseToolCalls(payload, ['read_file']);
   assert.equal(calls.length, 0);
 });
+
+test('parseStandaloneToolCalls supports tool_c with named parameter attribute', () => {
+  const payload = '<tool_calls><tool_c name="Read"><parameter name="file_path" string="true">D:\\git_codes\\google_adk_helloworld_git\\111.md</parameter></tool_c></tool_calls>';
+  const calls = parseStandaloneToolCalls(payload, ['Read']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'Read');
+  assert.equal(calls[0].input.file_path, 'D:\\git_codes\\google_adk_helloworld_git\\111.md');
+});
+
+test('parseStandaloneToolCalls supports user provided tool_call markup sample', () => {
+  const payload = `<tool_calls>
+<tool_call name="Bash">
+<parameter name="command" string="true">cd /d/git_codes/google_adk_helloworld_git && python -c "open('_gen_prime.py','w',encoding='utf-8').write('import sys\\nsys.stdout.reconfigure(encoding="utf-8")\\ncode = chr(10).join(["def is_prime(n):"," if n<2: return False"," for i in range(2,int(n**0.5)+1):"," if n%i==0: return False"," return True","","primes=[n for n in range(1,101) if is_prime(n)]","print(f\\"1~100以内的质数共{len(primes)}个:\\")","for i,p in enumerate(primes,1): print(f\\"{i:2d}. {p:3d}\\")"])\\nopen("prime_100.py","w",encoding="utf-8").write(code)\\nprint("OK")\\n')"</parameter>
+</tool_call>
+</tool_calls>`;
+  const calls = parseStandaloneToolCalls(payload, ['Bash']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'Bash');
+  assert.equal(typeof calls[0].input.command, 'string');
+  assert.equal(calls[0].input.command.includes('python -c'), true);
+});
+
+test('parseStandaloneToolCalls ignores empty nested tool_calls tags', () => {
+  const payload = '<tool_calls><tool_calls><tool_calls></tool_calls></tool_calls></tool_calls>';
+  const calls = parseStandaloneToolCalls(payload, ['mcp__exa__web_search_exa']);
+  assert.equal(calls.length, 0);
+});

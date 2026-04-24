@@ -358,6 +358,53 @@ func TestParseToolCallsSupportsNestedToolTagStyle(t *testing.T) {
 	}
 }
 
+func TestParseStandaloneToolCallsSupportsToolCWithNamedParameterAttribute(t *testing.T) {
+	text := `<tool_calls><tool_c name="Read"><parameter name="file_path" string="true">D:\git_codes\google_adk_helloworld_git\111.md</parameter></tool_c></tool_calls>`
+	calls := ParseStandaloneToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("expected tool name Read, got %q", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != `D:\git_codes\google_adk_helloworld_git\111.md` {
+		t.Fatalf("expected file_path argument, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsSupportsUserProvidedToolCallMarkupSample(t *testing.T) {
+	text := `<tool_calls>
+<tool_call name="Bash">
+<parameter name="command" string="true">cd /d/git_codes/google_adk_helloworld_git && python -c "open('_gen_prime.py','w',encoding='utf-8').write('import sys\nsys.stdout.reconfigure(encoding="utf-8")\ncode = chr(10).join(["def is_prime(n):"," if n<2: return False"," for i in range(2,int(n**0.5)+1):"," if n%i==0: return False"," return True","","primes=[n for n in range(1,101) if is_prime(n)]","print(f\"1~100以内的质数共{len(primes)}个:\")","for i,p in enumerate(primes,1): print(f\"{i:2d}. {p:3d}\")"])\nopen("prime_100.py","w",encoding="utf-8").write(code)\nprint("OK")\n')"</parameter>
+</tool_call>
+</tool_calls>`
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("expected tool name Bash, got %q", calls[0].Name)
+	}
+	cmd, _ := calls[0].Input["command"].(string)
+	if cmd == "" {
+		t.Fatalf("expected non-empty command argument, got %#v", calls[0].Input)
+	}
+	if !strings.Contains(cmd, "python -c") {
+		t.Fatalf("expected command to contain python -c, got %q", cmd)
+	}
+}
+
+func TestParseStandaloneToolCallsIgnoresEmptyNestedToolCallsTags(t *testing.T) {
+	text := `<tool_calls><tool_calls><tool_calls></tool_calls></tool_calls></tool_calls>`
+	res := ParseStandaloneToolCallsDetailed(text, []string{"mcp__exa__web_search_exa"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected saw tool-call syntax, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected no parsed calls for empty nested tags, got %#v", res.Calls)
+	}
+}
+
 func TestParseToolCallsSupportsAntmlFunctionAttributeWithParametersTag(t *testing.T) {
 	text := `<antml:function_calls><antml:function_call id="x" function="Bash"><antml:parameters>{"command":"pwd"}</antml:parameters></antml:function_call></antml:function_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})

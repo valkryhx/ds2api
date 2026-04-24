@@ -115,4 +115,10 @@ func TestBuildOpenAIFinalPrompt_UsesRawJSONToolcallInstruction(t *testing.T) {
 	if !strings.Contains(finalPrompt, "Do NOT output function.name/function.arguments text blocks.") {
 		t.Fatalf("expected function.name/function.arguments ban instruction, got: %q", finalPrompt)
 	}
+	if !strings.Contains(finalPrompt, "NEVER use XML/markup call formats like <tool_calls>, <tool_call>, <function_call>, <invoke>") {
+		t.Fatalf("expected xml/markup call ban instruction, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "The JSON must contain top-level key \"tool_calls\" with an array value []") {
+		t.Fatalf("expected strict top-level tool_calls contract, got: %q", finalPrompt)
+	}
 }

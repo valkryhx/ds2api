@@ -6,15 +6,19 @@ import (
 	"strings"
 )
 
-var toolCallMarkupTagNames = []string{"tool_call", "function_call", "invoke"}
+var toolCallMarkupTagNames = []string{"tool_call", "tool_c", "tool_calls", "function_call", "invoke"}
 var toolCallMarkupTagPatternByName = map[string]*regexp.Regexp{
 	"tool_call":     regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_call\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_call>`),
+	"tool_c":        regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_c\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_c>`),
+	"tool_calls":    regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_calls\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_calls>`),
 	"function_call": regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?function_call\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?function_call>`),
 	"invoke":        regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?invoke\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?invoke>`),
 }
 var toolCallMarkupSelfClosingPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?invoke\b([^>]*)/>`)
 var toolCallMarkupKVPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?([a-z0-9_\-.]+)\b[^>]*>(.*?)</(?:[a-z0-9_:-]+:)?([a-z0-9_\-.]+)>`)
 var toolCallMarkupAttrPattern = regexp.MustCompile(`(?is)(name|function|tool)\s*=\s*"([^"]+)"`)
+var toolCallMarkupNamedArgPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?(?:parameter|argument)\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?(?:parameter|argument)>`)
+var toolCallMarkupNamedArgAttrPattern = regexp.MustCompile(`(?is)\bname\s*=\s*"([^"]+)"`)
 var anyTagPattern = regexp.MustCompile(`(?is)<[^>]+>`)
 var toolCallMarkupNameTagNames = []string{"name", "function"}
 var toolCallMarkupNamePatternByTag = map[string]*regexp.Regexp{
@@ -83,7 +87,9 @@ func parseMarkupSingleToolCall(attrs string, inner string) ParsedToolCall {
 	}
 
 	input := map[string]any{}
-	if argsRaw := findMarkupTagValue(inner, toolCallMarkupArgsTagNames, toolCallMarkupArgsPatternByTag); argsRaw != "" {
+	if namedArgs := parseMarkupNamedArguments(inner); len(namedArgs) > 0 {
+		input = namedArgs
+	} else if argsRaw := findMarkupTagValue(inner, toolCallMarkupArgsTagNames, toolCallMarkupArgsPatternByTag); argsRaw != "" {
 		input = parseMarkupInput(argsRaw)
 	} else if kv := parseMarkupKVObject(inner); len(kv) > 0 {
 		input = kv
@@ -96,6 +102,9 @@ func parseMarkupInput(raw string) map[string]any {
 	if raw == "" {
 		return map[string]any{}
 	}
+	if namedArgs := parseMarkupNamedArguments(raw); len(namedArgs) > 0 {
+		return namedArgs
+	}
 	if parsed := parseToolCallInput(raw); len(parsed) > 0 {
 		return parsed
 	}
@@ -103,6 +112,42 @@ func parseMarkupInput(raw string) map[string]any {
 		return kv
 	}
 	return map[string]any{"_raw": stripTagText(raw)}
+}
+
+func parseMarkupNamedArguments(text string) map[string]any {
+	raw := strings.TrimSpace(text)
+	if raw == "" {
+		return nil
+	}
+	out := map[string]any{}
+	for _, m := range toolCallMarkupNamedArgPattern.FindAllStringSubmatch(raw, -1) {
+		if len(m) < 3 {
+			continue
+		}
+		attrRaw := strings.TrimSpace(m[1])
+		valueRaw := strings.TrimSpace(m[2])
+		attrMatch := toolCallMarkupNamedArgAttrPattern.FindStringSubmatch(attrRaw)
+		if len(attrMatch) < 2 {
+			continue
+		}
+		key := strings.TrimSpace(attrMatch[1])
+		if key == "" {
+			continue
+		}
+		if parsed := parseToolCallInput(valueRaw); len(parsed) > 0 {
+			if rawVal, ok := parsed["_raw"]; ok && len(parsed) == 1 {
+				out[key] = rawVal
+			} else {
+				out[key] = parsed
+			}
+			continue
+		}
+		out[key] = stripTagText(valueRaw)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func parseMarkupKVObject(text string) map[string]any {

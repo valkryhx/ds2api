@@ -104,6 +104,22 @@ func parseSingleXMLToolCall(block string) (ParsedToolCall, bool) {
 				}
 			default:
 				if inParams || inTool {
+					if (tag == "parameter" || tag == "argument") && len(t.Attr) > 0 {
+						paramName := ""
+						for _, attr := range t.Attr {
+							if strings.EqualFold(strings.TrimSpace(attr.Name.Local), "name") {
+								paramName = strings.TrimSpace(attr.Value)
+								break
+							}
+						}
+						if paramName != "" {
+							var v string
+							if err := dec.DecodeElement(&v, &t); err == nil {
+								params[paramName] = strings.TrimSpace(v)
+							}
+							continue
+						}
+					}
 					var v string
 					if err := dec.DecodeElement(&v, &t); err == nil {
 						params[t.Name.Local] = strings.TrimSpace(v)

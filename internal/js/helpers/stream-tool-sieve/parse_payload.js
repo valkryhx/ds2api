@@ -1,10 +1,12 @@
 'use strict';
 
 const TOOL_CALL_PATTERN = /\{\s*["']tool_calls["']\s*:\s*\[(.*?)\]\s*\}/s;
-const TOOL_CALL_MARKUP_BLOCK_PATTERN = /<(?:[a-z0-9_:-]+:)?(tool_call|function_call|invoke)\b([^>]*)>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?\1>/gi;
+const TOOL_CALL_MARKUP_TAG_NAMES = ['tool_call', 'tool_c', 'tool_calls', 'function_call', 'invoke'];
 const TOOL_CALL_MARKUP_SELFCLOSE_PATTERN = /<(?:[a-z0-9_:-]+:)?invoke\b([^>]*)\/>/gi;
 const TOOL_CALL_MARKUP_KV_PATTERN = /<(?:[a-z0-9_:-]+:)?([a-z0-9_.-]+)\b[^>]*>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?\1>/gi;
 const TOOL_CALL_MARKUP_ATTR_PATTERN = /(name|function|tool)\s*=\s*"([^"]+)"/i;
+const TOOL_CALL_MARKUP_NAMED_ARG_PATTERN = /<(?:[a-z0-9_:-]+:)?(?:parameter|argument)\b([^>]*)>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?(?:parameter|argument)>/gi;
+const TOOL_CALL_MARKUP_NAMED_ARG_ATTR_PATTERN = /\bname\s*=\s*"([^"]+)"/i;
 const TOOL_CALL_MARKUP_NAME_PATTERNS = [
   /<(?:[a-z0-9_:-]+:)?name\b[^>]*>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?name>/i,
   /<(?:[a-z0-9_:-]+:)?function\b[^>]*>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?function>/i,
@@ -128,10 +130,16 @@ function parseMarkupToolCalls(text) {
     return [];
   }
   const out = [];
-  for (const m of raw.matchAll(TOOL_CALL_MARKUP_BLOCK_PATTERN)) {
-    const parsed = parseMarkupSingleToolCall(toStringSafe(m[2]).trim(), toStringSafe(m[3]).trim());
-    if (parsed) {
-      out.push(parsed);
+  for (const tagName of TOOL_CALL_MARKUP_TAG_NAMES) {
+    const blockPattern = new RegExp(
+      `<(?:[a-z0-9_:-]+:)?${tagName}\\b([^>]*)>([\\s\\S]*?)<\\/(?:[a-z0-9_:-]+:)?${tagName}>`,
+      'gi',
+    );
+    for (const m of raw.matchAll(blockPattern)) {
+      const parsed = parseMarkupSingleToolCall(toStringSafe(m[1]).trim(), toStringSafe(m[2]).trim());
+      if (parsed) {
+        out.push(parsed);
+      }
     }
   }
   for (const m of raw.matchAll(TOOL_CALL_MARKUP_SELFCLOSE_PATTERN)) {
@@ -247,13 +255,18 @@ function parseMarkupSingleToolCall(attrs, inner) {
   }
 
   let input = {};
-  const argsRaw = findMarkupTagValue(inner, TOOL_CALL_MARKUP_ARGS_PATTERNS);
-  if (argsRaw) {
-    input = parseMarkupInput(argsRaw);
+  const namedArgs = parseMarkupNamedArguments(inner);
+  if (Object.keys(namedArgs).length > 0) {
+    input = namedArgs;
   } else {
-    const kv = parseMarkupKVObject(inner);
-    if (Object.keys(kv).length > 0) {
-      input = kv;
+    const argsRaw = findMarkupTagValue(inner, TOOL_CALL_MARKUP_ARGS_PATTERNS);
+    if (argsRaw) {
+      input = parseMarkupInput(argsRaw);
+    } else {
+      const kv = parseMarkupKVObject(inner);
+      if (Object.keys(kv).length > 0) {
+        input = kv;
+      }
     }
   }
   return { name, input };
@@ -264,6 +277,10 @@ function parseMarkupInput(raw) {
   if (!s) {
     return {};
   }
+  const namedArgs = parseMarkupNamedArguments(s);
+  if (Object.keys(namedArgs).length > 0) {
+    return namedArgs;
+  }
   const parsed = parseToolCallInput(s);
   if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
     return parsed;
@@ -273,6 +290,37 @@ function parseMarkupInput(raw) {
     return kv;
   }
   return { _raw: stripTagText(s) };
+}
+
+function parseMarkupNamedArguments(text) {
+  const raw = toStringSafe(text).trim();
+  if (!raw) {
+    return {};
+  }
+  const out = {};
+  for (const m of raw.matchAll(TOOL_CALL_MARKUP_NAMED_ARG_PATTERN)) {
+    const attrs = toStringSafe(m[1]).trim();
+    const valueRaw = toStringSafe(m[2]).trim();
+    const keyMatch = attrs.match(TOOL_CALL_MARKUP_NAMED_ARG_ATTR_PATTERN);
+    if (!keyMatch || !keyMatch[1]) {
+      continue;
+    }
+    const key = toStringSafe(keyMatch[1]).trim();
+    if (!key) {
+      continue;
+    }
+    const parsed = parseToolCallInput(valueRaw);
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length === 1 && Object.prototype.hasOwnProperty.call(parsed, '_raw')) {
+      out[key] = parsed._raw;
+      continue;
+    }
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed) && Object.keys(parsed).length > 0) {
+      out[key] = parsed;
+      continue;
+    }
+    out[key] = stripTagText(valueRaw);
+  }
+  return out;
 }
 
 function parseMarkupKVObject(text) {
