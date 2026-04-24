@@ -11,8 +11,12 @@ const {
   parseMarkupToolCalls,
   parseTextKVToolCalls,
 } = require('./parse_payload');
+const {
+  extractJSONObjectFrom,
+} = require('./jsonscan');
 
 const TOOL_NAME_LOOSE_PATTERN = /[^a-z0-9]+/g;
+const EXAMPLE_PREFIX_PATTERN = /(示例|example|例如|比如|for example|请勿执行|不要执行|仅示例|仅供参考|do not execute|don't execute)/i;
 
 function extractToolNames(tools) {
   if (!Array.isArray(tools) || tools.length === 0) {
@@ -96,23 +100,31 @@ function parseStandaloneToolCallsDetailed(text, toolNames) {
   if (looksLikeToolExampleContext(trimmed)) {
     return result;
   }
-  result.sawToolCallSyntax = looksLikeToolCallSyntax(trimmed);
-  let parsed = parseToolCallsPayload(trimmed);
-  if (parsed.length === 0) {
-    parsed = parseMarkupToolCalls(trimmed);
+  const candidates = [trimmed];
+  const trailing = extractTrailingStandaloneJSONObjectCandidate(trimmed);
+  if (trailing && !looksLikeToolExamplePrefix(trailing.prefix)) {
+    candidates.unshift(trailing.payload);
   }
-  if (parsed.length === 0) {
-    parsed = parseTextKVToolCalls(trimmed);
-  }
-  if (parsed.length === 0) {
+  result.sawToolCallSyntax = candidates.some((c) => looksLikeToolCallSyntax(c));
+
+  for (const candidate of candidates) {
+    let parsed = parseToolCallsPayload(candidate);
+    if (parsed.length === 0) {
+      parsed = parseMarkupToolCalls(candidate);
+    }
+    if (parsed.length === 0) {
+      parsed = parseTextKVToolCalls(candidate);
+    }
+    if (parsed.length === 0) {
+      continue;
+    }
+    result.sawToolCallSyntax = true;
+    const filtered = filterToolCallsDetailed(parsed, toolNames);
+    result.calls = filtered.calls;
+    result.rejectedToolNames = filtered.rejectedToolNames;
+    result.rejectedByPolicy = filtered.rejectedToolNames.length > 0 && filtered.calls.length === 0;
     return result;
   }
-
-  result.sawToolCallSyntax = true;
-  const filtered = filterToolCallsDetailed(parsed, toolNames);
-  result.calls = filtered.calls;
-  result.rejectedToolNames = filtered.rejectedToolNames;
-  result.rejectedByPolicy = filtered.rejectedToolNames.length > 0 && filtered.calls.length === 0;
   return result;
 }
 
@@ -223,6 +235,39 @@ function looksLikeToolCallSyntax(text) {
     || lower.includes('<function_call')
     || lower.includes('<invoke')
     || lower.includes('function.name:');
+}
+
+function looksLikeToolExamplePrefix(text) {
+  return EXAMPLE_PREFIX_PATTERN.test(toStringSafe(text));
+}
+
+function extractTrailingStandaloneJSONObjectCandidate(text) {
+  const trimmed = toStringSafe(text).trim();
+  if (!trimmed) {
+    return null;
+  }
+  let offset = 0;
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const rel = trimmed.indexOf('{', offset);
+    if (rel < 0) {
+      return null;
+    }
+    const obj = extractJSONObjectFrom(trimmed, rel);
+    if (obj.ok) {
+      const suffix = trimmed.slice(obj.end).trim();
+      if (!suffix) {
+        return {
+          payload: trimmed.slice(rel, obj.end).trim(),
+          prefix: trimmed.slice(0, rel).trim(),
+        };
+      }
+    }
+    offset = rel + 1;
+    if (offset >= trimmed.length) {
+      return null;
+    }
+  }
 }
 
 module.exports = {

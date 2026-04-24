@@ -9,6 +9,7 @@ var toolCallPattern = regexp.MustCompile(`\{\s*["']tool_calls["']\s*:\s*\[(.*?)\
 var fencedJSONPattern = regexp.MustCompile("(?s)```(?:json)?\\s*(.*?)\\s*```")
 var standaloneFencedJSONPattern = regexp.MustCompile("(?s)^\\s*```(?:json)?\\s*(.*?)\\s*```\\s*$")
 var fencedBlockPattern = regexp.MustCompile("(?s)```.*?```")
+var exampleContextPattern = regexp.MustCompile(`(?is)(示例|example|例如|比如|for example|请勿执行|不要执行|仅示例|仅供参考|do not execute|don't execute)`)
 
 func buildToolCallCandidates(text string) []string {
 	trimmed := strings.TrimSpace(text)
@@ -176,6 +177,14 @@ func looksLikeToolExampleContext(text string) bool {
 	return strings.Contains(t, "```")
 }
 
+func looksLikeToolExamplePrefix(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	return exampleContextPattern.MatchString(trimmed)
+}
+
 func extractStandaloneFencedPayload(text string) (string, bool) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
@@ -190,6 +199,32 @@ func extractStandaloneFencedPayload(text string) (string, bool) {
 		return "", false
 	}
 	return payload, true
+}
+
+func extractTrailingStandaloneJSONObjectCandidate(text string) (payload string, prefix string, ok bool) {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return "", "", false
+	}
+
+	offset := 0
+	for {
+		rel := strings.Index(trimmed[offset:], "{")
+		if rel < 0 {
+			return "", "", false
+		}
+		start := offset + rel
+		obj, end, parsed := extractJSONObject(trimmed, start)
+		if parsed {
+			if strings.TrimSpace(trimmed[end:]) == "" {
+				return strings.TrimSpace(obj), strings.TrimSpace(trimmed[:start]), true
+			}
+		}
+		offset = start + 1
+		if offset >= len(trimmed) {
+			return "", "", false
+		}
+	}
 }
 
 func stripFencedCodeBlocks(text string) string {

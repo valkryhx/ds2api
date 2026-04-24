@@ -85,6 +85,12 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 	if fencedPayload, ok := extractStandaloneFencedPayload(trimmed); ok {
 		// Fallback: allow fenced payload only when the whole response is the fenced block.
 		candidates = append([]string{fencedPayload}, candidates...)
+	} else if trailingPayload, prefix, ok := extractTrailingStandaloneJSONObjectCandidate(trimmed); ok {
+		// Allow "prose + trailing tool payload" when the tail is a pure JSON object and
+		// the prose does not look like an explicit example context.
+		if !looksLikeToolExamplePrefix(prefix) {
+			candidates = append([]string{trailingPayload}, candidates...)
+		}
 	} else if looksLikeToolExampleContext(trimmed) {
 		return result
 	}
@@ -256,6 +262,12 @@ func parseToolCallItem(m map[string]any) (ParsedToolCall, bool) {
 			}
 		}
 	}
+	if !hasInput {
+		if implicit, ok := extractImplicitToolInput(m); ok {
+			inputRaw = implicit
+			hasInput = true
+		}
+	}
 	if strings.TrimSpace(name) == "" {
 		return ParsedToolCall{}, false
 	}
@@ -263,6 +275,37 @@ func parseToolCallItem(m map[string]any) (ParsedToolCall, bool) {
 		Name:  strings.TrimSpace(name),
 		Input: parseToolCallInput(inputRaw),
 	}, true
+}
+
+func extractImplicitToolInput(m map[string]any) (map[string]any, bool) {
+	if len(m) == 0 {
+		return nil, false
+	}
+	excluded := map[string]struct{}{
+		"name":         {},
+		"input":        {},
+		"function":     {},
+		"arguments":    {},
+		"args":         {},
+		"parameters":   {},
+		"params":       {},
+		"id":           {},
+		"type":         {},
+		"index":        {},
+		"tool_call_id": {},
+		"call_id":      {},
+	}
+	out := map[string]any{}
+	for k, v := range m {
+		if _, skip := excluded[k]; skip {
+			continue
+		}
+		out[k] = v
+	}
+	if len(out) == 0 {
+		return nil, false
+	}
+	return out, true
 }
 
 func parseToolCallInput(v any) map[string]any {

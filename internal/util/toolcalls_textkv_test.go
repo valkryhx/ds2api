@@ -61,3 +61,45 @@ func TestParseTextKVToolCalls_Standalone(t *testing.T) {
 		t.Fatalf("unexpected name: %s", calls[0].Name)
 	}
 }
+
+func TestParseTextKVToolCalls_CallMarkerChinese(t *testing.T) {
+	text := `[调用 Read] {"file_path":"D:/git_codes/google_adk_helloworld_git/docs/GOOGLE_ADK_SourceCode_Helper.md","limit":100}`
+	calls := ParseToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != "D:/git_codes/google_adk_helloworld_git/docs/GOOGLE_ADK_SourceCode_Helper.md" {
+		t.Fatalf("unexpected file_path: %#v", calls[0].Input["file_path"])
+	}
+}
+
+func TestParseTextKVToolCalls_CallMarkerEnglish(t *testing.T) {
+	text := `[Call Bash] {"command":"pwd","description":"check cwd"}`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
+func TestParseTextKVToolCalls_CallMarkerMixedTextMultiple(t *testing.T) {
+	text := `继续
+[调用 Read] {"file_path":"a.md","offset":200}
+[调用 Glob] {"pattern":"*.py","path":"D:/work"}
+内容是什么`
+	calls := ParseToolCalls(text, []string{"Read", "Glob"})
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(calls))
+	}
+	if calls[0].Name != "Read" || calls[1].Name != "Glob" {
+		t.Fatalf("unexpected names: %#v", calls)
+	}
+}

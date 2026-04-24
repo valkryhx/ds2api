@@ -130,6 +130,29 @@ func TestParseStandaloneToolCallsIgnoresFencedCodeBlockWithProse(t *testing.T) {
 	}
 }
 
+func TestParseStandaloneToolCallsAllowsTrailingPayloadAfterProse(t *testing.T) {
+	text := "我将启动完整的验证流程：先运行单元测试检查基础功能，再启动服务执行端到端测试。\n\n" +
+		"{\"tool_calls\": [{\"name\": \"Bash\", \"description\": \"检查pytest是否可用\", \"command\": \"pytest --version\"}]}"
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected trailing payload to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected tool name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "pytest --version" {
+		t.Fatalf("expected implicit command arg, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsIgnoresTrailingPayloadWhenPrefixIsExample(t *testing.T) {
+	text := "下面是示例：\n" +
+		"{\"tool_calls\": [{\"name\": \"search\", \"input\": {\"q\": \"go\"}}]}"
+	if calls := ParseStandaloneToolCalls(text, []string{"search"}); len(calls) != 0 {
+		t.Fatalf("expected example prefix payload to be ignored, got %#v", calls)
+	}
+}
+
 func TestParseToolCallsAllowsQualifiedToolName(t *testing.T) {
 	text := `{"tool_calls":[{"name":"mcp.search_web","input":{"q":"golang"}}]}`
 	calls := ParseToolCalls(text, []string{"search_web"})

@@ -109,4 +109,10 @@ func TestBuildOpenAIFinalPrompt_UsesRawJSONToolcallInstruction(t *testing.T) {
 	if strings.Contains(finalPrompt, "output ONLY a JSON code block") {
 		t.Fatalf("unexpected old fenced instruction left in prompt: %q", finalPrompt)
 	}
+	if !strings.Contains(finalPrompt, "NEVER use pseudo-call text formats such as '[调用 Read] {...}'") {
+		t.Fatalf("expected pseudo-call ban instruction, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "Do NOT output function.name/function.arguments text blocks.") {
+		t.Fatalf("expected function.name/function.arguments ban instruction, got: %q", finalPrompt)
+	}
 }

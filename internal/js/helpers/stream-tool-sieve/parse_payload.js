@@ -19,6 +19,7 @@ const TOOL_CALL_MARKUP_ARGS_PATTERNS = [
   /<(?:[a-z0-9_:-]+:)?params\b[^>]*>([\s\S]*?)<\/(?:[a-z0-9_:-]+:)?params>/i,
 ];
 const TEXT_KV_NAME_PATTERN = /function\.name:\s*([a-zA-Z0-9_.-]+)/gi;
+const CALL_MARKER_PATTERN = /\[\s*(?:调用|call)\s+([a-zA-Z0-9_.-]+)\s*\]/gi;
 
 const {
   toStringSafe,
@@ -143,6 +144,14 @@ function parseMarkupToolCalls(text) {
 }
 
 function parseTextKVToolCalls(text) {
+  const fnStyle = parseFunctionNameStyleToolCalls(text);
+  if (fnStyle.length > 0) {
+    return fnStyle;
+  }
+  return parseCallMarkerStyleToolCalls(text);
+}
+
+function parseFunctionNameStyleToolCalls(text) {
   const raw = toStringSafe(text);
   if (!raw) {
     return [];
@@ -171,6 +180,43 @@ function parseTextKVToolCalls(text) {
       continue;
     }
     const objStart = argStart + bracePos;
+    const obj = extractJSONObjectFrom(raw, objStart);
+    if (!obj.ok) {
+      continue;
+    }
+    out.push({
+      name,
+      input: parseToolCallInput(raw.slice(objStart, obj.end)),
+    });
+  }
+  return out;
+}
+
+function parseCallMarkerStyleToolCalls(text) {
+  const raw = toStringSafe(text);
+  if (!raw) {
+    return [];
+  }
+  const out = [];
+  const matches = [...raw.matchAll(CALL_MARKER_PATTERN)];
+  if (matches.length === 0) {
+    return out;
+  }
+
+  for (let i = 0; i < matches.length; i += 1) {
+    const match = matches[i];
+    const name = toStringSafe(match[1]).trim();
+    if (!name) {
+      continue;
+    }
+    const markerEnd = match.index + toStringSafe(match[0]).length;
+    const searchEnd = i + 1 < matches.length ? matches[i + 1].index : raw.length;
+    const searchArea = raw.slice(markerEnd, searchEnd);
+    const bracePos = searchArea.indexOf('{');
+    if (bracePos < 0) {
+      continue;
+    }
+    const objStart = markerEnd + bracePos;
     const obj = extractJSONObjectFrom(raw, objStart);
     if (!obj.ok) {
       continue;
@@ -310,6 +356,13 @@ function parseToolCallItem(m) {
       }
     }
   }
+  if (!hasInput) {
+    const implicit = extractImplicitToolInput(m);
+    if (implicit) {
+      inputRaw = implicit;
+      hasInput = true;
+    }
+  }
 
   if (!name) {
     return null;
@@ -319,6 +372,34 @@ function parseToolCallItem(m) {
     name,
     input: parseToolCallInput(inputRaw),
   };
+}
+
+function extractImplicitToolInput(m) {
+  if (!m || typeof m !== 'object') {
+    return null;
+  }
+  const excluded = new Set([
+    'name',
+    'input',
+    'function',
+    'arguments',
+    'args',
+    'parameters',
+    'params',
+    'id',
+    'type',
+    'index',
+    'tool_call_id',
+    'call_id',
+  ]);
+  const out = {};
+  for (const [k, v] of Object.entries(m)) {
+    if (excluded.has(k)) {
+      continue;
+    }
+    out[k] = v;
+  }
+  return Object.keys(out).length > 0 ? out : null;
 }
 
 function parseToolCallInput(v) {

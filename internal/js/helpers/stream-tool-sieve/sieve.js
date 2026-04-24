@@ -44,6 +44,13 @@ function processToolSieveChunk(state, chunk, toolNames) {
       resetIncrementalToolState(state);
 
       if (Array.isArray(consumed.calls) && consumed.calls.length > 0) {
+        if (consumed.prefix) {
+          noteText(state, consumed.prefix);
+          events.push({ type: 'text', text: consumed.prefix });
+        }
+        if (consumed.suffix) {
+          state.pending += consumed.suffix;
+        }
         state.pendingToolRaw = captured;
         state.pendingToolCalls = consumed.calls;
         continue;
