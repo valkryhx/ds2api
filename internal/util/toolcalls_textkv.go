@@ -7,12 +7,16 @@ import (
 
 var textKVNamePattern = regexp.MustCompile(`(?is)function\.name:\s*([a-zA-Z0-9_\-.]+)`)
 var callMarkerPattern = regexp.MustCompile(`(?is)\[\s*(?:调用|call)\s+([a-zA-Z0-9_\-.]+)\s*\]`)
+var directParenCallNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_\-.]*$`)
 
 func parseTextKVToolCalls(text string) []ParsedToolCall {
 	if calls := parseFunctionNameStyleToolCalls(text); len(calls) > 0 {
 		return calls
 	}
-	return parseCallMarkerStyleToolCalls(text)
+	if calls := parseCallMarkerStyleToolCalls(text); len(calls) > 0 {
+		return calls
+	}
+	return parseDirectParenStyleToolCalls(text)
 }
 
 func parseFunctionNameStyleToolCalls(text string) []ParsedToolCall {
@@ -102,4 +106,68 @@ func parseCallMarkerStyleToolCalls(text string) []ParsedToolCall {
 		return nil
 	}
 	return out
+}
+
+func parseDirectParenStyleToolCalls(text string) []ParsedToolCall {
+	lines := strings.Split(text, "\n")
+	out := make([]ParsedToolCall, 0)
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+			line = strings.TrimSpace(line[2:])
+		}
+		openIdx := strings.IndexByte(line, '(')
+		closeIdx := strings.LastIndexByte(line, ')')
+		if openIdx <= 0 || closeIdx <= openIdx || closeIdx != len(line)-1 {
+			continue
+		}
+
+		name := strings.TrimSpace(line[:openIdx])
+		if !directParenCallNamePattern.MatchString(name) {
+			continue
+		}
+		argsRaw := strings.TrimSpace(line[openIdx+1 : closeIdx])
+		if argsRaw == "" {
+			continue
+		}
+
+		input := parseDirectParenInput(name, argsRaw)
+		out = append(out, ParsedToolCall{
+			Name:  name,
+			Input: input,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseDirectParenInput(name string, argsRaw string) map[string]any {
+	trimmed := strings.TrimSpace(argsRaw)
+	if trimmed == "" {
+		return map[string]any{}
+	}
+
+	// Prefer explicit JSON object arguments when present.
+	if strings.HasPrefix(trimmed, "{") {
+		if parsed := parseToolCallInput(trimmed); len(parsed) > 0 {
+			if _, hasRaw := parsed["_raw"]; !hasRaw {
+				return parsed
+			}
+		}
+	}
+
+	lower := strings.ToLower(strings.TrimSpace(name))
+	switch lower {
+	case "bash", "shell", "shell_command", "execute_command", "powershell", "cmd", "terminal":
+		return map[string]any{"command": trimmed}
+	case "read", "read_file", "cat":
+		return map[string]any{"file_path": trimmed}
+	default:
+		return map[string]any{"_raw": trimmed}
+	}
 }

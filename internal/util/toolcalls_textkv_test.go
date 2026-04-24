@@ -103,3 +103,54 @@ func TestParseTextKVToolCalls_CallMarkerMixedTextMultiple(t *testing.T) {
 		t.Fatalf("unexpected names: %#v", calls)
 	}
 }
+
+func TestParseTextKVToolCalls_DirectParenBash(t *testing.T) {
+	text := "使用 bash 查看当天时间\nBash(date +%Y-%m-%d)"
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "date +%Y-%m-%d" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
+func TestParseTextKVToolCalls_DirectParenJSONInput(t *testing.T) {
+	text := `Read({"file_path":"README.md","offset":10})`
+	calls := ParseToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != "README.md" {
+		t.Fatalf("unexpected file_path: %#v", calls[0].Input["file_path"])
+	}
+	if calls[0].Input["offset"] != float64(10) {
+		t.Fatalf("unexpected offset: %#v", calls[0].Input["offset"])
+	}
+}
+
+func TestParseTextKVToolCalls_DirectParenMultipleLines(t *testing.T) {
+	text := `继续
+Bash(pwd)
+Read(README.md)
+Done`
+	calls := ParseToolCalls(text, []string{"Bash", "Read"})
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %d", len(calls))
+	}
+	if calls[0].Name != "Bash" || calls[1].Name != "Read" {
+		t.Fatalf("unexpected names: %#v", calls)
+	}
+	if calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected bash command: %#v", calls[0].Input["command"])
+	}
+	if calls[1].Input["file_path"] != "README.md" {
+		t.Fatalf("unexpected read file_path: %#v", calls[1].Input["file_path"])
+	}
+}
