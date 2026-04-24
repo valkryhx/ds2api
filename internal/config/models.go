@@ -17,6 +17,12 @@ type ModelAliasReader interface {
 var DeepSeekModels = []ModelInfo{
 	{ID: "deepseek-chat", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-reasoner", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-flash", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-flash-think", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-flash-think-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-pro", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-pro-think", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-pro-think-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-chat-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-reasoner-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 }
@@ -68,6 +74,18 @@ func GetModelConfig(model string) (thinking bool, search bool, ok bool) {
 		return false, false, true
 	case "deepseek-reasoner":
 		return true, false, true
+	case "deepseek-v4-flash":
+		return false, false, true
+	case "deepseek-v4-flash-think":
+		return true, false, true
+	case "deepseek-v4-flash-think-search":
+		return true, true, true
+	case "deepseek-v4-pro":
+		return true, false, true
+	case "deepseek-v4-pro-think":
+		return true, false, true
+	case "deepseek-v4-pro-think-search":
+		return true, true, true
 	case "deepseek-chat-search":
 		return false, true, true
 	case "deepseek-reasoner-search":

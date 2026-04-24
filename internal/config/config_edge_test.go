@@ -29,6 +29,66 @@ func TestGetModelConfigDeepSeekReasoner(t *testing.T) {
 	}
 }
 
+func TestGetModelConfigDeepSeekV4Flash(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-flash")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-flash")
+	}
+	if thinking || search {
+		t.Fatalf("expected thinking=false search=false, got thinking=%v search=%v", thinking, search)
+	}
+}
+
+func TestGetModelConfigDeepSeekV4FlashThink(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-flash-think")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-flash-think")
+	}
+	if !thinking || search {
+		t.Fatalf("expected thinking=true search=false, got thinking=%v search=%v", thinking, search)
+	}
+}
+
+func TestGetModelConfigDeepSeekV4FlashThinkSearch(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-flash-think-search")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-flash-think-search")
+	}
+	if !thinking || !search {
+		t.Fatalf("expected thinking=true search=true, got thinking=%v search=%v", thinking, search)
+	}
+}
+
+func TestGetModelConfigDeepSeekV4Pro(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-pro")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-pro")
+	}
+	if !thinking || search {
+		t.Fatalf("expected thinking=true search=false, got thinking=%v search=%v", thinking, search)
+	}
+}
+
+func TestGetModelConfigDeepSeekV4ProThink(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-pro-think")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-pro-think")
+	}
+	if !thinking || search {
+		t.Fatalf("expected thinking=true search=false, got thinking=%v search=%v", thinking, search)
+	}
+}
+
+func TestGetModelConfigDeepSeekV4ProThinkSearch(t *testing.T) {
+	thinking, search, ok := GetModelConfig("deepseek-v4-pro-think-search")
+	if !ok {
+		t.Fatal("expected ok for deepseek-v4-pro-think-search")
+	}
+	if !thinking || !search {
+		t.Fatalf("expected thinking=true search=true, got thinking=%v search=%v", thinking, search)
+	}
+}
+
 func TestGetModelConfigDeepSeekChatSearch(t *testing.T) {
 	thinking, search, ok := GetModelConfig("deepseek-chat-search")
 	if !ok {
@@ -460,6 +520,46 @@ func TestOpenAIModelsResponse(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("expected non-empty models list")
+	}
+	hasV4Flash := false
+	hasV4FlashThink := false
+	hasV4FlashThinkSearch := false
+	hasV4Pro := false
+	hasV4ProThink := false
+	hasV4ProThinkSearch := false
+	for _, model := range data {
+		switch model.ID {
+		case "deepseek-v4-flash":
+			hasV4Flash = true
+		case "deepseek-v4-flash-think":
+			hasV4FlashThink = true
+		case "deepseek-v4-flash-think-search":
+			hasV4FlashThinkSearch = true
+		case "deepseek-v4-pro":
+			hasV4Pro = true
+		case "deepseek-v4-pro-think":
+			hasV4ProThink = true
+		case "deepseek-v4-pro-think-search":
+			hasV4ProThinkSearch = true
+		}
+	}
+	if !hasV4Flash {
+		t.Fatal("expected models list to include deepseek-v4-flash")
+	}
+	if !hasV4FlashThink {
+		t.Fatal("expected models list to include deepseek-v4-flash-think")
+	}
+	if !hasV4FlashThinkSearch {
+		t.Fatal("expected models list to include deepseek-v4-flash-think-search")
+	}
+	if !hasV4Pro {
+		t.Fatal("expected models list to include deepseek-v4-pro")
+	}
+	if !hasV4ProThink {
+		t.Fatal("expected models list to include deepseek-v4-pro-think")
+	}
+	if !hasV4ProThinkSearch {
+		t.Fatal("expected models list to include deepseek-v4-pro-think-search")
 	}
 }
 
