@@ -88,7 +88,11 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 
 	finalThinking := result.Thinking
 	finalText := result.Text
-	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames)
+	// Chat/completions tool parsing should remain permissive: if the upstream model
+	// emits a valid standalone tool payload, pass it through even when the request's
+	// declared tool list is partial.
+	parseToolNames := toolNames[:0]
+	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, parseToolNames)
 	writeJSON(w, http.StatusOK, respBody)
 }
 
@@ -110,12 +114,15 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 	}
 
 	created := time.Now().Unix()
-	bufferToolContent := len(toolNames) > 0 && h.toolcallFeatureMatchEnabled()
+	bufferToolContent := h.toolcallFeatureMatchEnabled()
 	emitEarlyToolDeltas := h.toolcallEarlyEmitHighConfidence()
 	initialType := "text"
 	if thinkingEnabled {
 		initialType = "thinking"
 	}
+	// Keep chat/completions tool interception permissive (do not hard-filter by
+	// declared tools in the request payload).
+	parseToolNames := toolNames[:0]
 
 	streamRuntime := newChatStreamRuntime(
 		w,
@@ -127,7 +134,7 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		finalPrompt,
 		thinkingEnabled,
 		searchEnabled,
-		toolNames,
+		parseToolNames,
 		bufferToolContent,
 		emitEarlyToolDeltas,
 	)

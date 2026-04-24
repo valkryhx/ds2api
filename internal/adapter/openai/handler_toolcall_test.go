@@ -121,6 +121,27 @@ func streamToolCallArgumentChunks(frames []map[string]any) []string {
 	return out
 }
 
+func streamToolCallNames(frames []map[string]any) []string {
+	out := make([]string, 0, 4)
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			toolCalls, _ := delta["tool_calls"].([]any)
+			for _, tc := range toolCalls {
+				tcm, _ := tc.(map[string]any)
+				fn, _ := tcm["function"].(map[string]any)
+				name, _ := fn["name"].(string)
+				if strings.TrimSpace(name) != "" {
+					out = append(out, name)
+				}
+			}
+		}
+	}
+	return out
+}
+
 func TestHandleNonStreamToolCallInterceptsChatModel(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
@@ -182,7 +203,33 @@ func TestHandleNonStreamToolCallInterceptsReasonerModel(t *testing.T) {
 	}
 }
 
-func TestHandleNonStreamUnknownToolNotIntercepted(t *testing.T) {
+func TestHandleNonStreamToolCallFromThinkingPayloadIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"mcp__exa__web_search_exa\",\"input\":{\"query\":\"马斯克\",\"num_results\":5}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2-think", "deepseek-reasoner", "prompt", true, []string{"mcp__exa__web_search_exa"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call from thinking payload, got %#v", msg["tool_calls"])
+	}
+}
+
+func TestHandleNonStreamUnknownToolIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"not_in_schema\",\"input\":{\"q\":\"go\"}}]}"}`,
@@ -198,16 +245,53 @@ func TestHandleNonStreamUnknownToolNotIntercepted(t *testing.T) {
 	out := decodeJSONBody(t, rec.Body.String())
 	choices, _ := out["choices"].([]any)
 	choice, _ := choices[0].(map[string]any)
-	if choice["finish_reason"] != "stop" {
-		t.Fatalf("expected finish_reason=stop, got %#v", choice["finish_reason"])
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
 	}
 	msg, _ := choice["message"].(map[string]any)
-	if _, ok := msg["tool_calls"]; ok {
-		t.Fatalf("did not expect tool_calls for unknown schema name, got %#v", msg["tool_calls"])
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one unknown tool call to be intercepted, got %#v", msg["tool_calls"])
 	}
-	content, _ := msg["content"].(string)
-	if !strings.Contains(content, `"tool_calls"`) {
-		t.Fatalf("expected unknown tool json to pass through as text, got %#v", content)
+	call0, _ := toolCalls[0].(map[string]any)
+	fn, _ := call0["function"].(map[string]any)
+	if asString(fn["name"]) != "not_in_schema" {
+		t.Fatalf("unexpected function name: %#v", fn["name"])
+	}
+}
+
+func TestHandleNonStreamMixedDeclaredAndUndeclaredToolCallsIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"mcp__exa__web_search_exa\",\"input\":{\"query\":\"马斯克 最新 动态 2026\",\"num_results\":10}},{\"name\":\"Bash\",\"input\":{\"command\":\"date +%Y-%m-%d\"}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2b-mixed", "deepseek-chat", "prompt", false, []string{"Bash"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 2 {
+		t.Fatalf("expected both declared and undeclared tool calls, got %#v", msg["tool_calls"])
+	}
+	gotNames := map[string]bool{}
+	for _, item := range toolCalls {
+		call, _ := item.(map[string]any)
+		fn, _ := call["function"].(map[string]any)
+		gotNames[asString(fn["name"])] = true
+	}
+	if !gotNames["mcp__exa__web_search_exa"] || !gotNames["Bash"] {
+		t.Fatalf("expected both tool names, got %#v", gotNames)
 	}
 }
 
@@ -299,6 +383,32 @@ func TestHandleNonStreamToolUseLabelToolCallIntercepted(t *testing.T) {
 	fn, _ := tc["function"].(map[string]any)
 	if fn["name"] != "mcp__exa__web_search_exa" {
 		t.Fatalf("unexpected function name: %#v", fn["name"])
+	}
+}
+
+func TestHandleNonStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_2be3b3b84d2e45e2b9e300e40af39164\nfunction.name: mcp__exa__web_search_exa\nfunction.arguments: {\"query\":\"马斯克\",\"num_results\":10}\n[/TOOL_CALL_HISTORY]"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2f", "deepseek-chat", "prompt", false, nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call from TOOL_CALL_HISTORY payload, got %#v", msg["tool_calls"])
 	}
 }
 
@@ -437,7 +547,53 @@ func TestHandleStreamReasonerToolCallInterceptsWithoutRawContentLeak(t *testing.
 	}
 }
 
-func TestHandleStreamUnknownToolDoesNotLeakRawPayload(t *testing.T) {
+func TestHandleStreamToolCallFromThinkingPayloadIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"mcp__exa__web_search_exa\",\"input\":{\"query\":\"马斯克\",\"num_results\":5}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid4-thinking-json", "deepseek-reasoner", "prompt", true, false, []string{"mcp__exa__web_search_exa"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta from thinking payload, body=%s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamThinkingPayloadInterceptedWhenThinkingDisabled(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/thinking_content","v":"{\"tool_calls\":[{\"name\":\"mcp__exa__web_search_exa\",\"input\":{\"query\":\"马斯克\",\"num_results\":5}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid4-thinking-json-disabled", "deepseek-chat", "prompt", false, false, []string{"mcp__exa__web_search_exa"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta from thinking payload when thinking disabled, body=%s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamUnknownToolIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"not_in_schema\",\"input\":{\"q\":\"go\"}}]}"}`,
@@ -452,18 +608,29 @@ func TestHandleStreamUnknownToolDoesNotLeakRawPayload(t *testing.T) {
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if streamHasToolCallsDelta(frames) {
-		t.Fatalf("did not expect tool_calls delta for unknown schema name, body=%s", rec.Body.String())
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for unknown schema name, body=%s", rec.Body.String())
 	}
 	if streamHasRawToolJSONContent(frames) {
 		t.Fatalf("did not expect raw tool_calls json leak for unknown schema name: %s", rec.Body.String())
 	}
-	if streamFinishReason(frames) != "stop" {
-		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+	names := streamToolCallNames(frames)
+	found := false
+	for _, name := range names {
+		if name == "not_in_schema" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected not_in_schema in streamed tool call names, got %#v", names)
 	}
 }
 
-func TestHandleStreamUnknownToolNoArgsDoesNotLeakRawPayload(t *testing.T) {
+func TestHandleStreamUnknownToolNoArgsIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"not_in_schema\"}]}"}`,
@@ -478,14 +645,59 @@ func TestHandleStreamUnknownToolNoArgsDoesNotLeakRawPayload(t *testing.T) {
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if streamHasToolCallsDelta(frames) {
-		t.Fatalf("did not expect tool_calls delta for unknown schema name (no args), body=%s", rec.Body.String())
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for unknown schema name (no args), body=%s", rec.Body.String())
 	}
 	if streamHasRawToolJSONContent(frames) {
 		t.Fatalf("did not expect raw tool_calls json leak for unknown schema name (no args): %s", rec.Body.String())
 	}
-	if streamFinishReason(frames) != "stop" {
-		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+	names := streamToolCallNames(frames)
+	found := false
+	for _, name := range names {
+		if name == "not_in_schema" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected not_in_schema in streamed tool call names, got %#v", names)
+	}
+}
+
+func TestHandleStreamMixedDeclaredAndUndeclaredToolCallsIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"mcp__exa__web_search_exa\",\"input\":{\"query\":\"马斯克 最新 动态 2026\",\"num_results\":10}},{\"name\":\"Bash\",\"input\":{\"command\":\"date +%Y-%m-%d\"}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid5c-mixed", "deepseek-chat", "prompt", false, false, []string{"Bash"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for mixed declared/undeclared tools, body=%s", rec.Body.String())
+	}
+	if streamHasRawToolJSONContent(frames) {
+		t.Fatalf("did not expect raw tool_calls json leak: %s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+	names := streamToolCallNames(frames)
+	got := map[string]bool{}
+	for _, name := range names {
+		got[name] = true
+	}
+	if !got["mcp__exa__web_search_exa"] || !got["Bash"] {
+		t.Fatalf("expected both tool names in streamed delta, got %#v", names)
 	}
 }
 
@@ -790,6 +1002,29 @@ func TestHandleStreamToolUseLabelMultilineToolCallIntercepted(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(got), "tool use:") {
 		t.Fatalf("did not expect tool-use marker leaked into content, got=%q", got)
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_2be3b3b84d2e45e2b9e300e40af39164\nfunction.name: mcp__exa__web_search_exa\nfunction.arguments: {\"query\":\"马斯克\",\"num_results\":10}\n[/TOOL_CALL_HISTORY]"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid7j", "deepseek-chat", "prompt", false, false, nil)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta from TOOL_CALL_HISTORY payload, body=%s", rec.Body.String())
 	}
 	if streamFinishReason(frames) != "tool_calls" {
 		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
