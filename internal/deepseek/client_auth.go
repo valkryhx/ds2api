@@ -64,9 +64,7 @@ func (c *Client) CreateSession(ctx context.Context, a *auth.RequestAuth, maxAtte
 		}
 		code := intFrom(resp["code"])
 		if status == http.StatusOK && code == 0 {
-			data, _ := resp["data"].(map[string]any)
-			bizData, _ := data["biz_data"].(map[string]any)
-			sessionID, _ := bizData["id"].(string)
+			sessionID := extractSessionIDFromCreateSessionResponse(resp)
 			if sessionID != "" {
 				return sessionID, nil
 			}
@@ -89,6 +87,24 @@ func (c *Client) CreateSession(ctx context.Context, a *auth.RequestAuth, maxAtte
 		attempts++
 	}
 	return "", errors.New("create session failed")
+}
+
+func extractSessionIDFromCreateSessionResponse(resp map[string]any) string {
+	if resp == nil {
+		return ""
+	}
+	data, _ := resp["data"].(map[string]any)
+	bizData, _ := data["biz_data"].(map[string]any)
+
+	if legacyID, _ := bizData["id"].(string); strings.TrimSpace(legacyID) != "" {
+		return strings.TrimSpace(legacyID)
+	}
+	if chatSession, ok := bizData["chat_session"].(map[string]any); ok {
+		if chatID, _ := chatSession["id"].(string); strings.TrimSpace(chatID) != "" {
+			return strings.TrimSpace(chatID)
+		}
+	}
+	return ""
 }
 
 func (c *Client) GetPow(ctx context.Context, a *auth.RequestAuth, maxAttempts int) (string, error) {
