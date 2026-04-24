@@ -113,7 +113,12 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		return
 	}
 	result := sse.CollectStream(resp, thinkingEnabled, true)
-	textParsed := util.ParseStandaloneToolCallsDetailed(result.Text, toolNames)
+	parseToolNames := toolNames
+	if toolChoice.IsNone() {
+		// Keep tool_choice=none strict even if upstream emits structured tool payload.
+		parseToolNames = []string{"__tool_choice_none_block__"}
+	}
+	textParsed := util.ParseStandaloneToolCallsDetailed(result.Text, parseToolNames)
 	logResponsesToolPolicyRejection(traceID, toolChoice, textParsed, "text")
 
 	callCount := len(textParsed.Calls)
@@ -122,7 +127,7 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		return
 	}
 
-	responseObj := openaifmt.BuildResponseObject(responseID, model, finalPrompt, result.Thinking, result.Text, toolNames)
+	responseObj := openaifmt.BuildResponseObject(responseID, model, finalPrompt, result.Thinking, result.Text, parseToolNames)
 	h.getResponseStore().put(owner, responseID, responseObj)
 	writeJSON(w, http.StatusOK, responseObj)
 }

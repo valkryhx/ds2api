@@ -159,6 +159,41 @@ func TestParseStandaloneToolCallsSupportsToolUseLabelStyle(t *testing.T) {
 	}
 }
 
+func TestParseStandaloneToolCallsAllowsMCPWhenAllowListMissing(t *testing.T) {
+	text := `[TOOL_CALL_HISTORY]
+status: already_called
+origin: assistant
+not_user_input: true
+tool_call_id: call_2be3b3b84d2e45e2b9e300e40af39164
+function.name: mcp__exa__web_search_exa
+function.arguments: {"query":"马斯克","num_results":10}
+[/TOOL_CALL_HISTORY]`
+	calls := ParseStandaloneToolCalls(text, nil)
+	if len(calls) != 1 {
+		t.Fatalf("expected mcp tool call when allow-list missing, got %#v", calls)
+	}
+	if calls[0].Name != "mcp__exa__web_search_exa" {
+		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
+	}
+	if calls[0].Input["query"] != "马斯克" {
+		t.Fatalf("unexpected query arg: %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsAllowsNonMCPWhenAllowListMissing(t *testing.T) {
+	text := `{"tool_calls":[{"name":"Bash","input":{"command":"date +%Y-%m-%d"}}]}`
+	calls := ParseStandaloneToolCalls(text, nil)
+	if len(calls) != 1 {
+		t.Fatalf("expected calls to pass when allow-list is missing, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "date +%Y-%m-%d" {
+		t.Fatalf("unexpected args: %#v", calls[0].Input)
+	}
+}
+
 func TestParseStandaloneToolCallsIgnoresTrailingPayloadWhenPrefixIsExample(t *testing.T) {
 	text := "下面是示例：\n" +
 		"{\"tool_calls\": [{\"name\": \"search\", \"input\": {\"q\": \"go\"}}]}"

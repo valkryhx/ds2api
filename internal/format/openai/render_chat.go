@@ -8,7 +8,7 @@ import (
 )
 
 func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
-	detected := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
+	detected := DetectChatToolCalls(finalText, finalThinking, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
 	if strings.TrimSpace(finalThinking) != "" {
@@ -28,6 +28,21 @@ func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalT
 		"choices": []map[string]any{{"index": 0, "message": messageObj, "finish_reason": finishReason}},
 		"usage":   BuildChatUsage(finalPrompt, finalThinking, finalText),
 	}
+}
+
+func DetectChatToolCalls(finalText, finalThinking string, toolNames []string) util.ToolCallParseResult {
+	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
+	if len(textParsed.Calls) > 0 {
+		return textParsed
+	}
+	if strings.TrimSpace(finalThinking) == "" {
+		return textParsed
+	}
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, toolNames)
+	if len(thinkingParsed.Calls) > 0 {
+		return thinkingParsed
+	}
+	return textParsed
 }
 
 func BuildChatStreamDeltaChoice(index int, delta map[string]any) map[string]any {

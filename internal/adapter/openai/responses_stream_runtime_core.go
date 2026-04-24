@@ -104,7 +104,12 @@ func (s *responsesStreamRuntime) finalize() {
 		s.processToolStreamEvents(flushToolSieve(&s.sieve, s.toolNames), true)
 	}
 
-	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, s.toolNames)
+	parseToolNames := s.toolNames
+	if s.toolChoice.IsNone() {
+		// Keep tool_choice=none strict even if upstream emits structured tool payload.
+		parseToolNames = []string{"__tool_choice_none_block__"}
+	}
+	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
 	detected := textParsed.Calls
 	s.logToolPolicyRejections(textParsed)
 

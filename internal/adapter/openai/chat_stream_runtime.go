@@ -8,7 +8,6 @@ import (
 	openaifmt "ds2api/internal/format/openai"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
-	"ds2api/internal/util"
 )
 
 type chatStreamRuntime struct {
@@ -98,7 +97,7 @@ func (s *chatStreamRuntime) sendDone() {
 func (s *chatStreamRuntime) finalize(finishReason string) {
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
-	detected := util.ParseStandaloneToolCallsDetailed(finalText, s.toolNames)
+	detected := openaifmt.DetectChatToolCalls(finalText, finalThinking, s.toolNames)
 	if len(detected.Calls) > 0 && !s.toolCallsDoneEmitted {
 		finishReason = "tool_calls"
 		delta := map[string]any{
@@ -198,8 +197,8 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 			s.firstChunkSent = true
 		}
 		if p.Type == "thinking" {
+			s.thinking.WriteString(p.Text)
 			if s.thinkingEnabled {
-				s.thinking.WriteString(p.Text)
 				delta["reasoning_content"] = p.Text
 			}
 		} else {

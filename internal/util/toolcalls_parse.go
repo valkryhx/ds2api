@@ -118,6 +118,14 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		if len(parsed) > 0 {
 			result.SawToolCallSyntax = true
 			calls, rejectedNames := filterToolCallsDetailed(parsed, availableToolNames)
+			// Compatibility fallback: when tool allow-list is unavailable on this turn,
+			// preserve parsed standalone tool calls instead of hard-dropping them.
+			if len(availableToolNames) == 0 && len(calls) == 0 {
+				calls = normalizeParsedToolCallsNoPolicy(parsed)
+				if len(calls) > 0 {
+					rejectedNames = nil
+				}
+			}
 			result.Calls = calls
 			result.RejectedToolNames = rejectedNames
 			result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
@@ -125,6 +133,31 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		}
 	}
 	return result
+}
+
+func normalizeParsedToolCallsNoPolicy(parsed []ParsedToolCall) []ParsedToolCall {
+	if len(parsed) == 0 {
+		return nil
+	}
+	out := make([]ParsedToolCall, 0, len(parsed))
+	for _, tc := range parsed {
+		name := strings.TrimSpace(tc.Name)
+		if name == "" {
+			continue
+		}
+		input := tc.Input
+		if input == nil {
+			input = map[string]any{}
+		}
+		out = append(out, ParsedToolCall{
+			Name:  name,
+			Input: input,
+		})
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }
 
 func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames []string) ([]ParsedToolCall, []string) {

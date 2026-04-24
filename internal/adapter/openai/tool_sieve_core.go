@@ -297,7 +297,7 @@ var toolSieveKeywords = []string{
 
 func isStructuredToolKeyword(kw string) bool {
 	switch kw {
-	case "tool_calls", "function.name:", "[tool_call_history]":
+	case "tool_calls", "function.name:":
 		return true
 	default:
 		return false

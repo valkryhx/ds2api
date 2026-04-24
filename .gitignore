@@ -58,3 +58,5 @@ Thumbs.db
 # Claude Code
 .claude/
 CLAUDE.local.md
+.gocache/
+.gocache_local/
