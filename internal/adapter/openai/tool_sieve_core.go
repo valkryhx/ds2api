@@ -188,13 +188,12 @@ func findToolSegmentStart(s string) int {
 		return -1
 	}
 	lower := strings.ToLower(s)
-	keywords := []string{"tool_calls", "function.name:", "[tool_call_history]"}
 	offset := 0
 	for {
 		bestKeyIdx := -1
 		matchedKeyword := ""
 
-		for _, kw := range keywords {
+		for _, kw := range toolSieveKeywords {
 			idx := strings.Index(lower[offset:], kw)
 			if idx >= 0 {
 				absIdx := offset + idx
@@ -210,9 +209,12 @@ func findToolSegmentStart(s string) int {
 		}
 
 		keyIdx := bestKeyIdx
-		start := strings.LastIndex(s[:keyIdx], "{")
-		if start < 0 {
-			start = keyIdx
+		start := keyIdx
+		if isStructuredToolKeyword(matchedKeyword) {
+			start = strings.LastIndex(s[:keyIdx], "{")
+			if start < 0 {
+				start = keyIdx
+			}
 		}
 		if !insideCodeFence(s[:start]) {
 			return start
@@ -229,17 +231,33 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 	lower := strings.ToLower(captured)
 
 	keyIdx := -1
-	keywords := []string{"tool_calls", "function.name:", "[tool_call_history]"}
-	for _, kw := range keywords {
+	matchedKeyword := ""
+	for _, kw := range toolSieveKeywords {
 		idx := strings.Index(lower, kw)
 		if idx >= 0 && (keyIdx < 0 || idx < keyIdx) {
 			keyIdx = idx
+			matchedKeyword = kw
 		}
 	}
 
 	if keyIdx < 0 {
 		return "", nil, "", false
 	}
+	if !isStructuredToolKeyword(matchedKeyword) {
+		prefixPart := captured[:keyIdx]
+		if insideCodeFence(state.recentTextTail + prefixPart) {
+			return captured, nil, "", true
+		}
+		parsed := util.ParseStandaloneToolCallsDetailed(captured[keyIdx:], toolNames)
+		if len(parsed.Calls) > 0 {
+			return prefixPart, parsed.Calls, "", true
+		}
+		if parsed.SawToolCallSyntax && parsed.RejectedByPolicy {
+			return prefixPart, nil, "", true
+		}
+		return "", nil, "", false
+	}
+
 	start := strings.LastIndex(captured[:keyIdx], "{")
 	if start < 0 {
 		start = keyIdx
@@ -266,4 +284,22 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		return captured, nil, "", true
 	}
 	return prefixPart, parsed.Calls, suffixPart, true
+}
+
+var toolSieveKeywords = []string{
+	"tool_calls",
+	"function.name:",
+	"[tool_call_history]",
+	"tool use:",
+	"tool call:",
+	"调用工具:",
+}
+
+func isStructuredToolKeyword(kw string) bool {
+	switch kw {
+	case "tool_calls", "function.name:", "[tool_call_history]":
+		return true
+	default:
+		return false
+	}
 }

@@ -145,6 +145,20 @@ func TestParseStandaloneToolCallsAllowsTrailingPayloadAfterProse(t *testing.T) {
 	}
 }
 
+func TestParseStandaloneToolCallsSupportsToolUseLabelStyle(t *testing.T) {
+	text := "我来搜索 DeepSeek V4 的测评结果。\n\nTool use:\nmcp__exa__web_search_exa\n{\"query\":\"DeepSeek V4 测评\"}"
+	calls := ParseStandaloneToolCalls(text, []string{"mcp__exa__web_search_exa"})
+	if len(calls) != 1 {
+		t.Fatalf("expected tool use label style to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "mcp__exa__web_search_exa" {
+		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
+	}
+	if calls[0].Input["query"] != "DeepSeek V4 测评" {
+		t.Fatalf("unexpected query arg: %#v", calls[0].Input)
+	}
+}
+
 func TestParseStandaloneToolCallsIgnoresTrailingPayloadWhenPrefixIsExample(t *testing.T) {
 	text := "下面是示例：\n" +
 		"{\"tool_calls\": [{\"name\": \"search\", \"input\": {\"q\": \"go\"}}]}"

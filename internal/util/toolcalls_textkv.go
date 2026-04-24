@@ -7,6 +7,7 @@ import (
 
 var textKVNamePattern = regexp.MustCompile(`(?is)function\.name:\s*([a-zA-Z0-9_\-.]+)`)
 var callMarkerPattern = regexp.MustCompile(`(?is)\[\s*(?:调用|call)\s+([a-zA-Z0-9_\-.]+)\s*\]`)
+var toolUseLabelPattern = regexp.MustCompile(`(?is)^\s*(?:tool\s*use|tool\s*call|调用工具)\s*:\s*(.*)$`)
 var directParenCallNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_\-.]*$`)
 
 func parseTextKVToolCalls(text string) []ParsedToolCall {
@@ -16,7 +17,10 @@ func parseTextKVToolCalls(text string) []ParsedToolCall {
 	if calls := parseCallMarkerStyleToolCalls(text); len(calls) > 0 {
 		return calls
 	}
-	return parseDirectParenStyleToolCalls(text)
+	if calls := parseDirectParenStyleToolCalls(text); len(calls) > 0 {
+		return calls
+	}
+	return parseToolUseLabelStyleToolCalls(text)
 }
 
 func parseFunctionNameStyleToolCalls(text string) []ParsedToolCall {
@@ -112,34 +116,130 @@ func parseDirectParenStyleToolCalls(text string) []ParsedToolCall {
 	lines := strings.Split(text, "\n")
 	out := make([]ParsedToolCall, 0)
 	for _, raw := range lines {
-		line := strings.TrimSpace(raw)
-		if line == "" {
-			continue
+		if call, ok := parseSingleDirectParenCall(raw); ok {
+			out = append(out, call)
 		}
-		if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
-			line = strings.TrimSpace(line[2:])
-		}
-		openIdx := strings.IndexByte(line, '(')
-		closeIdx := strings.LastIndexByte(line, ')')
-		if openIdx <= 0 || closeIdx <= openIdx || closeIdx != len(line)-1 {
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseSingleDirectParenCall(raw string) (ParsedToolCall, bool) {
+	line := strings.TrimSpace(raw)
+	if line == "" {
+		return ParsedToolCall{}, false
+	}
+	if strings.HasPrefix(line, "- ") || strings.HasPrefix(line, "* ") {
+		line = strings.TrimSpace(line[2:])
+	}
+	openIdx := strings.IndexByte(line, '(')
+	closeIdx := strings.LastIndexByte(line, ')')
+	if openIdx <= 0 || closeIdx <= openIdx || closeIdx != len(line)-1 {
+		return ParsedToolCall{}, false
+	}
+	name := strings.TrimSpace(line[:openIdx])
+	if !directParenCallNamePattern.MatchString(name) {
+		return ParsedToolCall{}, false
+	}
+	argsRaw := strings.TrimSpace(line[openIdx+1 : closeIdx])
+	if argsRaw == "" {
+		return ParsedToolCall{}, false
+	}
+	return ParsedToolCall{
+		Name:  name,
+		Input: parseDirectParenInput(name, argsRaw),
+	}, true
+}
+
+func parseToolUseLabelStyleToolCalls(text string) []ParsedToolCall {
+	lines := strings.Split(text, "\n")
+	out := make([]ParsedToolCall, 0)
+
+	for i := 0; i < len(lines); i++ {
+		line := strings.TrimSpace(lines[i])
+		m := toolUseLabelPattern.FindStringSubmatch(line)
+		if len(m) == 0 {
 			continue
 		}
 
-		name := strings.TrimSpace(line[:openIdx])
-		if !directParenCallNamePattern.MatchString(name) {
-			continue
-		}
-		argsRaw := strings.TrimSpace(line[openIdx+1 : closeIdx])
-		if argsRaw == "" {
+		remainder := strings.TrimSpace(m[1])
+		if call, ok := parseSingleDirectParenCall(remainder); ok {
+			out = append(out, call)
 			continue
 		}
 
-		input := parseDirectParenInput(name, argsRaw)
+		name := ""
+		if remainder != "" {
+			fields := strings.Fields(remainder)
+			if len(fields) > 0 && directParenCallNamePattern.MatchString(fields[0]) {
+				name = fields[0]
+			}
+		}
+
+		if name == "" {
+			j := i + 1
+			for j < len(lines) && strings.TrimSpace(lines[j]) == "" {
+				j++
+			}
+			if j >= len(lines) {
+				continue
+			}
+			nextLine := strings.TrimSpace(lines[j])
+			if call, ok := parseSingleDirectParenCall(nextLine); ok {
+				out = append(out, call)
+				i = j
+				continue
+			}
+			if !directParenCallNamePattern.MatchString(nextLine) {
+				continue
+			}
+			name = nextLine
+			i = j
+		}
+
+		end := len(lines)
+		for j := i + 1; j < len(lines); j++ {
+			if toolUseLabelPattern.MatchString(strings.TrimSpace(lines[j])) {
+				end = j
+				break
+			}
+		}
+
+		segment := strings.TrimSpace(strings.Join(lines[i+1:end], "\n"))
+		if segment == "" {
+			continue
+		}
+
+		if braceIdx := strings.IndexByte(segment, '{'); braceIdx >= 0 {
+			if obj, _, ok := extractJSONObject(segment, braceIdx); ok {
+				out = append(out, ParsedToolCall{
+					Name:  name,
+					Input: parseToolCallInput(obj),
+				})
+				continue
+			}
+		}
+
+		firstArg := ""
+		for _, segLine := range strings.Split(segment, "\n") {
+			trimmed := strings.TrimSpace(segLine)
+			if trimmed == "" {
+				continue
+			}
+			firstArg = trimmed
+			break
+		}
+		if firstArg == "" {
+			continue
+		}
 		out = append(out, ParsedToolCall{
 			Name:  name,
-			Input: input,
+			Input: parseDirectParenInput(name, firstArg),
 		})
 	}
+
 	if len(out) == 0 {
 		return nil
 	}

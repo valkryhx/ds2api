@@ -271,6 +271,37 @@ func TestHandleNonStreamStandaloneFencedToolCallIntercepted(t *testing.T) {
 	}
 }
 
+func TestHandleNonStreamToolUseLabelToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"我来搜索 DeepSeek V4 的测评结果。\n\nTool use: mcp__exa__web_search_exa({\"query\":\"DeepSeek V4 review benchmark tests performance\",\"num_results\":5})"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2e", "deepseek-chat", "prompt", false, []string{"mcp__exa__web_search_exa"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call from tool-use label payload, got %#v", msg["tool_calls"])
+	}
+	tc, _ := toolCalls[0].(map[string]any)
+	fn, _ := tc["function"].(map[string]any)
+	if fn["name"] != "mcp__exa__web_search_exa" {
+		t.Fatalf("unexpected function name: %#v", fn["name"])
+	}
+}
+
 func TestHandleStreamToolCallInterceptsWithoutRawContentLeak(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
@@ -675,6 +706,90 @@ func TestHandleStreamStandaloneFencedToolCallIntercepted(t *testing.T) {
 	}
 	if streamHasRawToolJSONContent(frames) {
 		t.Fatalf("raw tool_calls JSON leaked in content delta: %s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamToolUseLabelInlineToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"我来搜索 DeepSeek V4 的测评结果。\nTool use: mcp__exa__web_search_exa({\"query\":\"DeepSeek V4 review benchmark tests performance\",\"num_results\":5})"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid7h", "deepseek-chat", "prompt", false, false, []string{"mcp__exa__web_search_exa"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for tool-use label payload, body=%s", rec.Body.String())
+	}
+	content := strings.Builder{}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+		}
+	}
+	got := content.String()
+	if !strings.Contains(got, "我来搜索 DeepSeek V4 的测评结果。") {
+		t.Fatalf("expected leading prose preserved, got=%q", got)
+	}
+	if strings.Contains(strings.ToLower(got), "tool use:") {
+		t.Fatalf("did not expect tool-use marker leaked into content, got=%q", got)
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamToolUseLabelMultilineToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"我来搜索。\nTool use:\n"}`,
+		`data: {"p":"response/content","v":"mcp__exa__web_search_exa\n"}`,
+		`data: {"p":"response/content","v":"{\"query\":\"DeepSeek V4 测评\"}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid7i", "deepseek-chat", "prompt", false, false, []string{"mcp__exa__web_search_exa"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for multiline tool-use label payload, body=%s", rec.Body.String())
+	}
+	content := strings.Builder{}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+		}
+	}
+	got := content.String()
+	if !strings.Contains(got, "我来搜索。") {
+		t.Fatalf("expected leading prose preserved, got=%q", got)
+	}
+	if strings.Contains(strings.ToLower(got), "tool use:") {
+		t.Fatalf("did not expect tool-use marker leaked into content, got=%q", got)
 	}
 	if streamFinishReason(frames) != "tool_calls" {
 		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())

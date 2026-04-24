@@ -154,3 +154,45 @@ Done`
 		t.Fatalf("unexpected read file_path: %#v", calls[1].Input["file_path"])
 	}
 }
+
+func TestParseTextKVToolCalls_ToolUseLabelNameNextLine(t *testing.T) {
+	text := "Tool use:\nmcp__exa__web_search_exa\n{\"query\":\"DeepSeek V4 测评\"}"
+	calls := ParseToolCalls(text, []string{"mcp__exa__web_search_exa"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "mcp__exa__web_search_exa" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["query"] != "DeepSeek V4 测评" {
+		t.Fatalf("unexpected query: %#v", calls[0].Input["query"])
+	}
+}
+
+func TestParseTextKVToolCalls_ToolUseLabelInlineNameAndJSON(t *testing.T) {
+	text := "Tool use: Bash\n{\"command\":\"date +%Y-%m-%d\"}"
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "date +%Y-%m-%d" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
+func TestParseTextKVToolCalls_ToolUseLabelInlineDirectParen(t *testing.T) {
+	text := "Tool use: Bash(date +%Y-%m-%d)"
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %d", len(calls))
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "date +%Y-%m-%d" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
