@@ -414,6 +414,113 @@ func TestHandleResponsesStreamMalformedToolJSONFallsBackToText(t *testing.T) {
 	}
 }
 
+func TestHandleResponsesStreamRecoversTruncatedShortToolPayload(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	streamBody := sseLine(`{"tool_calls":[{"name":"read_file","input":{"path":"README.MD"}}`) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"read_file"}, util.DefaultToolChoicePolicy(), "")
+	body := rec.Body.String()
+	if !strings.Contains(body, "event: response.function_call_arguments.done") {
+		t.Fatalf("expected recovered tool payload to emit function_call done event, body=%s", body)
+	}
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected done payload, body=%s", body)
+	}
+	if strings.TrimSpace(asString(donePayload["name"])) != "read_file" {
+		t.Fatalf("unexpected tool name in done payload: %#v", donePayload)
+	}
+}
+
+func TestHandleResponsesStreamDoesNotExecuteTruncatedLargeWritePayload(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	largeTruncated := `{"tool_calls":[{"name":"write_file","input":{"path":"README.MD","content":"` + strings.Repeat("a", 2200)
+	streamBody := sseLine(largeTruncated) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"write_file"}, util.DefaultToolChoicePolicy(), "")
+	body := rec.Body.String()
+	if strings.Contains(body, "event: response.function_call_arguments.done") {
+		t.Fatalf("did not expect truncated large write payload to execute as tool call, body=%s", body)
+	}
+	if !strings.Contains(body, "event: response.output_text.delta") {
+		t.Fatalf("expected fallback text output for truncated large write payload, body=%s", body)
+	}
+}
+
+func TestHandleResponsesStreamEmitsChunkedFunctionArgumentsDeltasBeforeDone(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	largeArg := strings.Repeat("x", 380)
+	streamBody := sseLine(`{"tool_calls":[{"name":"read_file","input":{"path":"`+largeArg+`"}}]}`) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"read_file"}, util.DefaultToolChoicePolicy(), "")
+	body := rec.Body.String()
+
+	deltaPayloads := extractAllSSEEventPayloads(body, "response.function_call_arguments.delta")
+	if len(deltaPayloads) < 2 {
+		t.Fatalf("expected chunked arguments delta events, got %d body=%s", len(deltaPayloads), body)
+	}
+	joined := strings.Builder{}
+	for _, p := range deltaPayloads {
+		delta := asString(p["delta"])
+		if len(delta) > 128 {
+			t.Fatalf("expected each arguments delta chunk <= 128 bytes, got len=%d payload=%#v", len(delta), p)
+		}
+		joined.WriteString(delta)
+	}
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected function_call_arguments.done payload, body=%s", body)
+	}
+	if joined.String() != asString(donePayload["arguments"]) {
+		t.Fatalf("delta chunks do not match done arguments: delta=%q done=%q", joined.String(), asString(donePayload["arguments"]))
+	}
+}
+
 func TestHandleResponsesStreamRequiredToolChoiceFailure(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)

@@ -153,6 +153,31 @@ func TestParseStandaloneToolCallsIgnoresTrailingPayloadWhenPrefixIsExample(t *te
 	}
 }
 
+func TestParseStandaloneToolCallsRecoversTruncatedShortPayload(t *testing.T) {
+	text := `{"tool_calls":[{"name":"Bash","input":{"command":"pytest --version"}}`
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected truncated payload to be recovered, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("unexpected tool name: %s", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "pytest --version" {
+		t.Fatalf("unexpected args: %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsRepairsTrailingCommas(t *testing.T) {
+	text := `{"tool_calls":[{"name":"Bash","input":{"command":"echo hi",}},]}`
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected trailing commas to be repaired, got %#v", calls)
+	}
+	if calls[0].Input["command"] != "echo hi" {
+		t.Fatalf("unexpected args: %#v", calls[0].Input)
+	}
+}
+
 func TestParseToolCallsAllowsQualifiedToolName(t *testing.T) {
 	text := `{"tool_calls":[{"name":"mcp.search_web","input":{"q":"golang"}}]}`
 	calls := ParseToolCalls(text, []string{"search_web"})

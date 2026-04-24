@@ -3,12 +3,15 @@ package openai
 import (
 	"encoding/json"
 	"strings"
+	"unicode/utf8"
 
 	openaifmt "ds2api/internal/format/openai"
 	"ds2api/internal/util"
 
 	"github.com/google/uuid"
 )
+
+const responsesFunctionArgsDeltaChunkSize = 128
 
 func (s *responsesStreamRuntime) allocateOutputIndex() int {
 	idx := s.nextOutputID
@@ -197,14 +200,10 @@ func (s *responsesStreamRuntime) emitFunctionCallDeltaEvents(deltas []toolCallDe
 		if strings.TrimSpace(d.Arguments) == "" {
 			continue
 		}
-		s.functionArgs[d.Index] += d.Arguments
 		outputIndex := s.ensureFunctionOutputIndex(d.Index)
 		itemID := s.ensureFunctionItemID(d.Index)
 		callID := s.ensureToolCallID(d.Index)
-		s.sendEvent(
-			"response.function_call_arguments.delta",
-			openaifmt.BuildResponsesFunctionCallArgumentsDeltaPayload(s.responseID, itemID, outputIndex, callID, d.Arguments),
-		)
+		s.emitFunctionCallArgumentDeltaChunks(d.Index, itemID, outputIndex, callID, d.Arguments)
 	}
 }
 
@@ -222,6 +221,7 @@ func (s *responsesStreamRuntime) emitFunctionCallDoneEvents(calls []util.ParsedT
 		callID := s.ensureToolCallID(idx)
 		argsBytes, _ := json.Marshal(tc.Input)
 		args := string(argsBytes)
+		s.emitMissingFunctionCallArgumentDeltas(idx, itemID, outputIndex, callID, args)
 		s.functionArgs[idx] = args
 		s.sendEvent(
 			"response.function_call_arguments.done",
@@ -242,4 +242,60 @@ func (s *responsesStreamRuntime) emitFunctionCallDoneEvents(calls []util.ParsedT
 		s.functionDone[idx] = true
 		s.toolCallsDoneEmitted = true
 	}
+}
+
+func (s *responsesStreamRuntime) emitMissingFunctionCallArgumentDeltas(callIndex int, itemID string, outputIndex int, callID, args string) {
+	existing := s.functionArgs[callIndex]
+	switch {
+	case existing == "":
+		s.emitFunctionCallArgumentDeltaChunks(callIndex, itemID, outputIndex, callID, args)
+	case strings.HasPrefix(args, existing):
+		s.emitFunctionCallArgumentDeltaChunks(callIndex, itemID, outputIndex, callID, args[len(existing):])
+	default:
+		// If the canonicalized final args differ from streamed raw deltas,
+		// keep prior deltas and only finalize with the normalized done payload.
+	}
+}
+
+func (s *responsesStreamRuntime) emitFunctionCallArgumentDeltaChunks(callIndex int, itemID string, outputIndex int, callID, delta string) {
+	if delta == "" {
+		return
+	}
+	for _, chunk := range splitUTF8Chunks(delta, responsesFunctionArgsDeltaChunkSize) {
+		if chunk == "" {
+			continue
+		}
+		s.functionArgs[callIndex] += chunk
+		s.sendEvent(
+			"response.function_call_arguments.delta",
+			openaifmt.BuildResponsesFunctionCallArgumentsDeltaPayload(s.responseID, itemID, outputIndex, callID, chunk),
+		)
+	}
+}
+
+func splitUTF8Chunks(s string, maxBytes int) []string {
+	if s == "" {
+		return nil
+	}
+	if maxBytes <= 0 || len(s) <= maxBytes {
+		return []string{s}
+	}
+	out := make([]string, 0, (len(s)/maxBytes)+1)
+	remaining := s
+	for len(remaining) > 0 {
+		if len(remaining) <= maxBytes {
+			out = append(out, remaining)
+			break
+		}
+		end := maxBytes
+		for end > 0 && !utf8.RuneStart(remaining[end]) {
+			end--
+		}
+		if end <= 0 {
+			end = maxBytes
+		}
+		out = append(out, remaining[:end])
+		remaining = remaining[end:]
+	}
+	return out
 }

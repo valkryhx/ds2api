@@ -185,16 +185,24 @@ func resolveAllowedToolName(name string, allowed map[string]struct{}, allowedCan
 }
 
 func parseToolCallsPayload(payload string) []ParsedToolCall {
-	var decoded any
-	if err := json.Unmarshal([]byte(payload), &decoded); err != nil {
-		// Try to repair backslashes first! Because LLMs often mix these two problems.
-		repaired := repairInvalidJSONBackslashes(payload)
-		// Try loose repair on top of that
-		repaired = RepairLooseJSON(repaired)
-		if err := json.Unmarshal([]byte(repaired), &decoded); err != nil {
-			return nil
-		}
+	decoded, truncatedRecovered, ok := decodeToolCallJSONPayload(payload)
+	if !ok {
+		return nil
 	}
+	parsed := parseToolCallPayloadValue(decoded)
+	if len(parsed) == 0 {
+		return nil
+	}
+	// Strategy split:
+	// - truncated short tool payloads are executable;
+	// - truncated large payload tools (e.g. write/edit with long content) are held.
+	if truncatedRecovered && shouldHoldRecoveredTruncatedToolCalls(parsed) {
+		return nil
+	}
+	return parsed
+}
+
+func parseToolCallPayloadValue(decoded any) []ParsedToolCall {
 	switch v := decoded.(type) {
 	case map[string]any:
 		if tc, ok := v["tool_calls"]; ok {
@@ -335,6 +343,12 @@ func parseToolCallInput(v any) map[string]any {
 		if repairedLoose != raw {
 			if err := json.Unmarshal([]byte(repairedLoose), &parsed); err == nil && parsed != nil {
 				return parsed
+			}
+		}
+		// Last resort: tolerate unclosed strings/brackets and trailing commas.
+		if recovered, _, ok := decodeToolCallJSONPayload(raw); ok {
+			if obj, ok := recovered.(map[string]any); ok && obj != nil {
+				return obj
 			}
 		}
 		return map[string]any{"_raw": raw}

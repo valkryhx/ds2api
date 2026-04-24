@@ -762,7 +762,7 @@ func TestHandleStreamInvalidToolJSONDoesNotLeakRawObject(t *testing.T) {
 	}
 }
 
-func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testing.T) {
+func TestHandleStreamIncompleteCapturedShortToolJSONRecoversOnFinalize(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"search\""}`,
@@ -777,8 +777,43 @@ func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testin
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta recovery for truncated short payload, body=%s", rec.Body.String())
+	}
+	content := strings.Builder{}
+	for _, frame := range frames {
+		choices, _ := frame["choices"].([]any)
+		for _, item := range choices {
+			choice, _ := item.(map[string]any)
+			delta, _ := choice["delta"].(map[string]any)
+			if c, ok := delta["content"].(string); ok {
+				content.WriteString(c)
+			}
+		}
+	}
+	if strings.Contains(strings.ToLower(content.String()), "tool_calls") {
+		t.Fatalf("did not expect raw tool_calls json leak after recovery, got=%q", content.String())
+	}
+}
+
+func TestHandleStreamIncompleteCapturedLargeWritePayloadStaysAsTextOnFinalize(t *testing.T) {
+	h := &Handler{}
+	large := strings.Repeat("a", 2200)
+	resp := makeSSEHTTPResponse(
+		fmt.Sprintf(`data: {"p":"response/content","v":%q}`, `{"tool_calls":[{"name":"write_file","input":{"path":"README.MD","content":"`+large),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid10-large", "deepseek-chat", "prompt", false, false, []string{"write_file"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
 	if streamHasToolCallsDelta(frames) {
-		t.Fatalf("did not expect tool_calls delta for incomplete json, body=%s", rec.Body.String())
+		t.Fatalf("did not expect tool_calls delta for truncated large write payload, body=%s", rec.Body.String())
 	}
 	content := strings.Builder{}
 	for _, frame := range frames {
@@ -792,7 +827,7 @@ func TestHandleStreamIncompleteCapturedToolJSONFlushesAsTextOnFinalize(t *testin
 		}
 	}
 	if !strings.Contains(strings.ToLower(content.String()), "tool_calls") || !strings.Contains(content.String(), "{") {
-		t.Fatalf("expected incomplete capture to flush as plain text instead of stalling, got=%q", content.String())
+		t.Fatalf("expected truncated large payload to fallback as text, got=%q", content.String())
 	}
 }
 
