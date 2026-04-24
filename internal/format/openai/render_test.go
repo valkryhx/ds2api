@@ -69,7 +69,7 @@ func TestBuildResponseObjectTreatsMixedProseToolPayloadAsText(t *testing.T) {
 	}
 }
 
-func TestBuildResponseObjectFencedToolPayloadRemainsText(t *testing.T) {
+func TestBuildResponseObjectFencedToolPayloadParsesAsFunctionCall(t *testing.T) {
 	obj := BuildResponseObject(
 		"resp_test",
 		"gpt-4o",
@@ -80,8 +80,32 @@ func TestBuildResponseObjectFencedToolPayloadRemainsText(t *testing.T) {
 	)
 
 	outputText, _ := obj["output_text"].(string)
+	if outputText != "" {
+		t.Fatalf("expected output_text hidden for standalone fenced tool payload, got %q", outputText)
+	}
+	output, _ := obj["output"].([]any)
+	if len(output) != 1 {
+		t.Fatalf("expected one function_call output item, got %#v", obj["output"])
+	}
+	first, _ := output[0].(map[string]any)
+	if first["type"] != "function_call" {
+		t.Fatalf("expected function_call output type, got %#v", first["type"])
+	}
+}
+
+func TestBuildResponseObjectFencedToolPayloadWithProseRemainsText(t *testing.T) {
+	obj := BuildResponseObject(
+		"resp_test",
+		"gpt-4o",
+		"prompt",
+		"",
+		"这是示例，不要执行：\n```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"golang\"}}]}\n```",
+		[]string{"search"},
+	)
+
+	outputText, _ := obj["output_text"].(string)
 	if outputText == "" {
-		t.Fatalf("expected output_text preserved for fenced example")
+		t.Fatalf("expected output_text preserved for fenced example with prose")
 	}
 	output, _ := obj["output"].([]any)
 	if len(output) != 1 {

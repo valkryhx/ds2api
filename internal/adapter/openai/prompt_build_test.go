@@ -81,3 +81,32 @@ func TestBuildOpenAIFinalPrompt_VercelPreparePathKeepsFinalAnswerInstruction(t *
 		t.Fatalf("vercel prepare finalPrompt missing history marker instruction: %q", finalPrompt)
 	}
 }
+
+func TestBuildOpenAIFinalPrompt_UsesRawJSONToolcallInstruction(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "run tool"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "shell_command",
+				"description": "run command",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, "output ONLY the raw JSON object") {
+		t.Fatalf("expected raw JSON instruction, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "Do NOT wrap it in ``` fences") {
+		t.Fatalf("expected no-fence instruction, got: %q", finalPrompt)
+	}
+	if strings.Contains(finalPrompt, "output ONLY a JSON code block") {
+		t.Fatalf("unexpected old fenced instruction left in prompt: %q", finalPrompt)
+	}
+}

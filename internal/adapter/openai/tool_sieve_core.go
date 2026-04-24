@@ -135,6 +135,11 @@ func splitSafeContentForToolDetection(s string) (safe, hold string) {
 	if s == "" {
 		return "", ""
 	}
+	if hasLeadingCodeFence(s) {
+		// Hold leading fenced content to avoid leaking fenced tool payloads.
+		// Finalization will decide whether it is an executable tool call.
+		return "", s
+	}
 	suspiciousStart := findSuspiciousPrefixStart(s)
 	if suspiciousStart < 0 {
 		return s, ""
@@ -160,6 +165,22 @@ func findSuspiciousPrefixStart(s string) int {
 		}
 	}
 	return start
+}
+
+func hasLeadingCodeFence(s string) bool {
+	if s == "" {
+		return false
+	}
+	i := 0
+	for i < len(s) {
+		switch s[i] {
+		case ' ', '\t', '\r', '\n':
+			i++
+		default:
+			return strings.HasPrefix(s[i:], "```")
+		}
+	}
+	return false
 }
 
 func findToolSegmentStart(s string) int {
@@ -206,7 +227,7 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		return "", nil, "", false
 	}
 	lower := strings.ToLower(captured)
-	
+
 	keyIdx := -1
 	keywords := []string{"tool_calls", "function.name:", "[tool_call_history]"}
 	for _, kw := range keywords {
@@ -215,7 +236,7 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 			keyIdx = idx
 		}
 	}
-	
+
 	if keyIdx < 0 {
 		return "", nil, "", false
 	}

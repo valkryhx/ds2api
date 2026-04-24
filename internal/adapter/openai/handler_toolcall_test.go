@@ -242,7 +242,7 @@ func TestHandleNonStreamEmbeddedToolCallExampleRemainsText(t *testing.T) {
 	}
 }
 
-func TestHandleNonStreamFencedToolCallExampleNotIntercepted(t *testing.T) {
+func TestHandleNonStreamStandaloneFencedToolCallIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		"data: {\"p\":\"response/content\",\"v\":\"```json\\n{\\\"tool_calls\\\":[{\\\"name\\\":\\\"search\\\",\\\"input\\\":{\\\"q\\\":\\\"go\\\"}}]}\\n```\"}",
@@ -258,16 +258,16 @@ func TestHandleNonStreamFencedToolCallExampleNotIntercepted(t *testing.T) {
 	out := decodeJSONBody(t, rec.Body.String())
 	choices, _ := out["choices"].([]any)
 	choice, _ := choices[0].(map[string]any)
-	if choice["finish_reason"] != "stop" {
-		t.Fatalf("expected finish_reason=stop, got %#v", choice["finish_reason"])
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
 	}
 	msg, _ := choice["message"].(map[string]any)
-	if _, ok := msg["tool_calls"]; ok {
-		t.Fatalf("did not expect tool_calls field for fenced example: %#v", msg["tool_calls"])
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call from standalone fenced payload, got %#v", msg["tool_calls"])
 	}
-	content, _ := msg["content"].(string)
-	if !strings.Contains(content, "```json") || !strings.Contains(content, `"tool_calls"`) {
-		t.Fatalf("expected fenced tool example to pass through as text, got %q", content)
+	if msg["content"] != nil {
+		t.Fatalf("expected content to be hidden when tool call is intercepted, got %#v", msg["content"])
 	}
 }
 
@@ -651,6 +651,33 @@ func TestHandleStreamFencedToolCallSnippetRemainsText(t *testing.T) {
 	}
 	if streamFinishReason(frames) != "stop" {
 		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
+	}
+}
+
+func TestHandleStreamStandaloneFencedToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		fmt.Sprintf(`data: {"p":"response/content","v":%q}`, "```json\n"),
+		fmt.Sprintf(`data: {"p":"response/content","v":%q}`, "{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"go\"}}]}\n```"),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid7g", "deepseek-chat", "prompt", false, false, []string{"search"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for standalone fenced payload, body=%s", rec.Body.String())
+	}
+	if streamHasRawToolJSONContent(frames) {
+		t.Fatalf("raw tool_calls JSON leaked in content delta: %s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
 	}
 }
 

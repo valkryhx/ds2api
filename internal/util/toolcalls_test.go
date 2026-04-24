@@ -112,10 +112,21 @@ func TestParseStandaloneToolCallsOnlyMatchesStandalonePayload(t *testing.T) {
 	}
 }
 
-func TestParseStandaloneToolCallsIgnoresFencedCodeBlock(t *testing.T) {
+func TestParseStandaloneToolCallsAllowsStandaloneFencedPayload(t *testing.T) {
 	fenced := "```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"go\"}}]}\n```"
+	calls := ParseStandaloneToolCalls(fenced, []string{"search"})
+	if len(calls) != 1 {
+		t.Fatalf("expected standalone fenced payload to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "search" {
+		t.Fatalf("expected tool name search, got %#v", calls[0].Name)
+	}
+}
+
+func TestParseStandaloneToolCallsIgnoresFencedCodeBlockWithProse(t *testing.T) {
+	fenced := "这是示例，不要执行：\n```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"go\"}}]}\n```"
 	if calls := ParseStandaloneToolCalls(fenced, []string{"search"}); len(calls) != 0 {
-		t.Fatalf("expected fenced tool_call example to be ignored, got %#v", calls)
+		t.Fatalf("expected fenced example with prose to be ignored, got %#v", calls)
 	}
 }
 

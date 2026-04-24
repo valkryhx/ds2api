@@ -80,11 +80,20 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 	if trimmed == "" {
 		return result
 	}
-	if looksLikeToolExampleContext(trimmed) {
+
+	candidates := []string{trimmed}
+	if fencedPayload, ok := extractStandaloneFencedPayload(trimmed); ok {
+		// Fallback: allow fenced payload only when the whole response is the fenced block.
+		candidates = append([]string{fencedPayload}, candidates...)
+	} else if looksLikeToolExampleContext(trimmed) {
 		return result
 	}
-	result.SawToolCallSyntax = looksLikeToolCallSyntax(trimmed)
-	candidates := []string{trimmed}
+	for _, c := range candidates {
+		if looksLikeToolCallSyntax(c) {
+			result.SawToolCallSyntax = true
+			break
+		}
+	}
 	for _, candidate := range candidates {
 		candidate = strings.TrimSpace(candidate)
 		if candidate == "" {
