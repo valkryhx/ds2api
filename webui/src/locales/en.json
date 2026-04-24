@@ -138,6 +138,12 @@
         "models": {
             "chat": "Non-reasoning model",
             "reasoner": "Reasoning model",
+            "v4Flash": "V4 Flash model",
+            "v4FlashThink": "V4 Flash thinking model",
+            "v4FlashThinkSearch": "V4 Flash thinking model (with search)",
+            "v4Pro": "V4 Pro model",
+            "v4ProThink": "V4 Pro thinking model",
+            "v4ProThinkSearch": "V4 Pro thinking model (with search)",
             "chatSearch": "Non-reasoning model (with search)",
             "reasonerSearch": "Reasoning model (with search)"
         },
