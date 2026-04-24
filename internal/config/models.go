@@ -18,9 +18,11 @@ var DeepSeekModels = []ModelInfo{
 	{ID: "deepseek-chat", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-reasoner", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-flash", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-flash-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-flash-think", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-flash-think-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-pro", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
+	{ID: "deepseek-v4-pro-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-pro-think", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-v4-pro-think-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
 	{ID: "deepseek-chat-search", Object: "model", Created: 1677610602, OwnedBy: "deepseek", Permission: []any{}},
@@ -76,12 +78,16 @@ func GetModelConfig(model string) (thinking bool, search bool, ok bool) {
 		return true, false, true
 	case "deepseek-v4-flash":
 		return false, false, true
+	case "deepseek-v4-flash-search":
+		return false, true, true
 	case "deepseek-v4-flash-think":
 		return true, false, true
 	case "deepseek-v4-flash-think-search":
 		return true, true, true
 	case "deepseek-v4-pro":
-		return true, false, true
+		return false, false, true
+	case "deepseek-v4-pro-search":
+		return false, true, true
 	case "deepseek-v4-pro-think":
 		return true, false, true
 	case "deepseek-v4-pro-think-search":
@@ -92,6 +98,29 @@ func GetModelConfig(model string) (thinking bool, search bool, ok bool) {
 		return true, true, true
 	default:
 		return false, false, false
+	}
+}
+
+// GetModelType returns the DeepSeek web `model_type` payload hint.
+// nil means default/quick mode.
+func GetModelType(model string) (modelType any, ok bool) {
+	switch lower(model) {
+	case "deepseek-chat",
+		"deepseek-reasoner",
+		"deepseek-v4-flash",
+		"deepseek-v4-flash-search",
+		"deepseek-v4-flash-think",
+		"deepseek-v4-flash-think-search",
+		"deepseek-chat-search",
+		"deepseek-reasoner-search":
+		return nil, true
+	case "deepseek-v4-pro",
+		"deepseek-v4-pro-search",
+		"deepseek-v4-pro-think",
+		"deepseek-v4-pro-think-search":
+		return "expert", true
+	default:
+		return nil, false
 	}
 }
 

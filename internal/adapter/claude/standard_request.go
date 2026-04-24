@@ -32,6 +32,7 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 	dsPayload := convertClaudeToDeepSeek(payload, store)
 	dsModel, _ := dsPayload["model"].(string)
 	thinkingEnabled, searchEnabled, ok := config.GetModelConfig(dsModel)
+	modelType, _ := config.GetModelType(dsModel)
 	if !ok {
 		thinkingEnabled = false
 		searchEnabled = false
@@ -45,6 +46,7 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 			RequestedModel: strings.TrimSpace(model),
 			ResolvedModel:  dsModel,
 			ResponseModel:  strings.TrimSpace(model),
+			ModelType:      modelType,
 			Messages:       payload["messages"].([]any),
 			FinalPrompt:    finalPrompt,
 			ToolNames:      toolNames,

@@ -178,3 +178,45 @@ func TestNormalizeOpenAIResponsesRequestToolChoiceNoneDisablesTools(t *testing.T
 		t.Fatalf("expected no tool names when tool_choice=none, got %#v", n.ToolNames)
 	}
 }
+
+func TestNormalizeOpenAIChatRequestV4ProUsesExpertModelType(t *testing.T) {
+	store := newEmptyStoreForNormalizeTest(t)
+	req := map[string]any{
+		"model": "deepseek-v4-pro",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+	n, err := normalizeOpenAIChatRequest(store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if n.ModelType != "expert" {
+		t.Fatalf("expected model_type=expert, got %#v", n.ModelType)
+	}
+	payload := n.CompletionPayload("sess-1")
+	if payload["model_type"] != "expert" {
+		t.Fatalf("expected completion payload model_type=expert, got %#v", payload["model_type"])
+	}
+}
+
+func TestNormalizeOpenAIChatRequestV4FlashKeepsQuickModelType(t *testing.T) {
+	store := newEmptyStoreForNormalizeTest(t)
+	req := map[string]any{
+		"model": "deepseek-v4-flash",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "hello"},
+		},
+	}
+	n, err := normalizeOpenAIChatRequest(store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if n.ModelType != nil {
+		t.Fatalf("expected nil model_type for quick mode, got %#v", n.ModelType)
+	}
+	payload := n.CompletionPayload("sess-1")
+	if val, exists := payload["model_type"]; !exists || val != nil {
+		t.Fatalf("expected completion payload model_type=null, got exists=%v value=%#v", exists, val)
+	}
+}

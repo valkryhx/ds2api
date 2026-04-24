@@ -5,6 +5,7 @@ type StandardRequest struct {
 	RequestedModel string
 	ResolvedModel  string
 	ResponseModel  string
+	ModelType      any
 	Messages       []any
 	FinalPrompt    string
 	ToolNames      []string
@@ -54,6 +55,7 @@ func (r StandardRequest) CompletionPayload(sessionID string) map[string]any {
 	payload := map[string]any{
 		"chat_session_id":   sessionID,
 		"parent_message_id": nil,
+		"model_type":        r.ModelType,
 		"prompt":            r.FinalPrompt,
 		"ref_file_ids":      []any{},
 		"thinking_enabled":  r.Thinking,

@@ -20,6 +20,7 @@ func normalizeGeminiRequest(store ConfigReader, routeModel string, req map[strin
 		return util.StandardRequest{}, fmt.Errorf("Model '%s' is not available.", requestedModel)
 	}
 	thinkingEnabled, searchEnabled, _ := config.GetModelConfig(resolvedModel)
+	modelType, _ := config.GetModelType(resolvedModel)
 
 	messagesRaw := geminiMessagesFromRequest(req)
 	if len(messagesRaw) == 0 {
@@ -35,6 +36,7 @@ func normalizeGeminiRequest(store ConfigReader, routeModel string, req map[strin
 		RequestedModel: requestedModel,
 		ResolvedModel:  resolvedModel,
 		ResponseModel:  requestedModel,
+		ModelType:      modelType,
 		Messages:       messagesRaw,
 		FinalPrompt:    finalPrompt,
 		ToolNames:      toolNames,

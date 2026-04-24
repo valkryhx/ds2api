@@ -19,6 +19,7 @@ func normalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 		return util.StandardRequest{}, fmt.Errorf("Model '%s' is not available.", model)
 	}
 	thinkingEnabled, searchEnabled, _ := config.GetModelConfig(resolvedModel)
+	modelType, _ := config.GetModelType(resolvedModel)
 	responseModel := strings.TrimSpace(model)
 	if responseModel == "" {
 		responseModel = resolvedModel
@@ -32,6 +33,7 @@ func normalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 		RequestedModel: strings.TrimSpace(model),
 		ResolvedModel:  resolvedModel,
 		ResponseModel:  responseModel,
+		ModelType:      modelType,
 		Messages:       messagesRaw,
 		FinalPrompt:    finalPrompt,
 		ToolNames:      toolNames,
@@ -54,6 +56,7 @@ func normalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, tra
 		return util.StandardRequest{}, fmt.Errorf("Model '%s' is not available.", model)
 	}
 	thinkingEnabled, searchEnabled, _ := config.GetModelConfig(resolvedModel)
+	modelType, _ := config.GetModelType(resolvedModel)
 
 	// Keep width-control as an explicit policy hook even if current default is true.
 	allowWideInput := true
@@ -87,6 +90,7 @@ func normalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, tra
 		RequestedModel: model,
 		ResolvedModel:  resolvedModel,
 		ResponseModel:  model,
+		ModelType:      modelType,
 		Messages:       messagesRaw,
 		FinalPrompt:    finalPrompt,
 		ToolNames:      toolNames,
