@@ -1,11 +1,14 @@
 {
   "base_headers": {
     "Host": "chat.deepseek.com",
-    "User-Agent": "DeepSeek/1.6.11 Android/35",
-    "Accept": "application/json",
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 Edg/147.0.0.0",
+    "Accept": "*/*",
     "Content-Type": "application/json",
-    "x-client-platform": "android",
-    "x-client-version": "1.6.11",
+    "Origin": "https://chat.deepseek.com",
+    "Referer": "https://chat.deepseek.com/",
+    "x-client-platform": "web",
+    "x-client-version": "1.8.0",
+    "x-app-version": "20241129.1",
     "x-client-locale": "zh_CN",
     "accept-charset": "UTF-8"
   },
