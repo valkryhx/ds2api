@@ -18,6 +18,8 @@ type ToolCallParseResult struct {
 	RejectedToolNames []string
 }
 
+const toolChoiceNoneBlockName = "__tool_choice_none_block__"
+
 func ParseToolCalls(text string, availableToolNames []string) []ParsedToolCall {
 	return ParseToolCallsDetailed(text, availableToolNames).Calls
 }
@@ -118,9 +120,10 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		if len(parsed) > 0 {
 			result.SawToolCallSyntax = true
 			calls, rejectedNames := filterToolCallsDetailed(parsed, availableToolNames)
-			// Compatibility fallback: when tool allow-list is unavailable on this turn,
-			// preserve parsed standalone tool calls instead of hard-dropping them.
-			if len(availableToolNames) == 0 && len(calls) == 0 {
+			// Compatibility fallback: allow parsed standalone tool calls to pass
+			// through when policy filtering rejects them, unless tool_choice=none
+			// sentinel explicitly requests hard blocking.
+			if len(calls) == 0 && shouldBypassToolAllowList(availableToolNames) {
 				calls = normalizeParsedToolCallsNoPolicy(parsed)
 				if len(calls) > 0 {
 					rejectedNames = nil
@@ -158,6 +161,15 @@ func normalizeParsedToolCallsNoPolicy(parsed []ParsedToolCall) []ParsedToolCall 
 		return nil
 	}
 	return out
+}
+
+func shouldBypassToolAllowList(availableToolNames []string) bool {
+	for _, name := range availableToolNames {
+		if strings.EqualFold(strings.TrimSpace(name), toolChoiceNoneBlockName) {
+			return false
+		}
+	}
+	return true
 }
 
 func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames []string) ([]ParsedToolCall, []string) {

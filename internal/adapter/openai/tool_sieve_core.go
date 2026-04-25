@@ -287,6 +287,9 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 }
 
 var toolSieveKeywords = []string{
+	"<invoke",
+	"<tool_call",
+	"<function_call",
 	"tool_calls",
 	"function.name:",
 	"[tool_call_history]",

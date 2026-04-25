@@ -6,13 +6,14 @@ import (
 	"strings"
 )
 
-var toolCallMarkupTagNames = []string{"tool_call", "tool_c", "tool_calls", "function_call", "invoke"}
+var toolCallMarkupTagNames = []string{"tool_call", "tool_c", "tool_calls", "function_call", "invoke", "function"}
 var toolCallMarkupTagPatternByName = map[string]*regexp.Regexp{
 	"tool_call":     regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_call\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_call>`),
 	"tool_c":        regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_c\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_c>`),
 	"tool_calls":    regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?tool_calls\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?tool_calls>`),
 	"function_call": regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?function_call\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?function_call>`),
 	"invoke":        regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?invoke\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?invoke>`),
+	"function":      regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?function\b([^>]*)>(.*?)</(?:[a-z0-9_:-]+:)?function>`),
 }
 var toolCallMarkupSelfClosingPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?invoke\b([^>]*)/>`)
 var toolCallMarkupKVPattern = regexp.MustCompile(`(?is)<(?:[a-z0-9_:-]+:)?([a-z0-9_\-.]+)\b[^>]*>(.*?)</(?:[a-z0-9_:-]+:)?([a-z0-9_\-.]+)>`)
@@ -134,12 +135,8 @@ func parseMarkupNamedArguments(text string) map[string]any {
 		if key == "" {
 			continue
 		}
-		if parsed := parseToolCallInput(valueRaw); len(parsed) > 0 {
-			if rawVal, ok := parsed["_raw"]; ok && len(parsed) == 1 {
-				out[key] = rawVal
-			} else {
-				out[key] = parsed
-			}
+		if parsed, ok := parseJSONValue(valueRaw); ok {
+			out[key] = parsed
 			continue
 		}
 		out[key] = stripTagText(valueRaw)
@@ -148,6 +145,26 @@ func parseMarkupNamedArguments(text string) map[string]any {
 		return nil
 	}
 	return out
+}
+
+func parseJSONValue(raw string) (any, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil, false
+	}
+	var out any
+	if json.Unmarshal([]byte(raw), &out) == nil {
+		return out, true
+	}
+	repaired := repairInvalidJSONBackslashes(raw)
+	if repaired != raw && json.Unmarshal([]byte(repaired), &out) == nil {
+		return out, true
+	}
+	repairedLoose := RepairLooseJSON(raw)
+	if repairedLoose != raw && json.Unmarshal([]byte(repairedLoose), &out) == nil {
+		return out, true
+	}
+	return nil, false
 }
 
 func parseMarkupKVObject(text string) map[string]any {

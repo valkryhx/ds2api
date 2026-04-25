@@ -344,6 +344,84 @@ func TestParseToolCallsSupportsInvokeFunctionCallStyle(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsInvokeCommandArray(t *testing.T) {
+	text := `<invoke name="shell"><parameter name="command">["powershell.exe","-Command","Write-Host 'hello'"]</parameter></invoke>`
+	calls := ParseToolCalls(text, []string{"shell"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	cmd, ok := calls[0].Input["command"].([]any)
+	if !ok {
+		t.Fatalf("expected command parsed as []any, got %T %#v", calls[0].Input["command"], calls[0].Input["command"])
+	}
+	if len(cmd) != 3 {
+		t.Fatalf("expected 3 command tokens, got %#v", cmd)
+	}
+	if cmd[0] != "powershell.exe" || cmd[1] != "-Command" {
+		t.Fatalf("unexpected command tokens: %#v", cmd)
+	}
+}
+
+func TestParseStandaloneToolCallsSupportsInvokeArrayAcrossMixedProse(t *testing.T) {
+	text := `<invoke name="shell"><parameter name="command">["powershell.exe","-Command","git -C D:/git_repos/ds2api log --oneline -20"]</parameter></invoke>
+
+I notice parser issues:
+
+<invoke name="shell"><parameter name="command">["powershell.exe","-Command","Get-Content -Path 'D:\\git_repos\\ds2api\\.git\\logs\\HEAD' -Tail 20"]</parameter></invoke>`
+	calls := ParseStandaloneToolCalls(text, []string{"shell_command"})
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %#v", calls)
+	}
+	cmd0, ok := calls[0].Input["command"].([]any)
+	if !ok || len(cmd0) != 3 {
+		t.Fatalf("expected first command parsed as []any, got %#v", calls[0].Input["command"])
+	}
+}
+
+func TestParseToolCallsSupportsMultipleInvokeFunctionCalls(t *testing.T) {
+	text := `<function_calls><invoke name="Bash"><parameter name="command">pwd</parameter></invoke><invoke name="Read"><parameter name="path">README.MD</parameter></invoke></function_calls>`
+	calls := ParseToolCalls(text, []string{"bash", "read"})
+	if len(calls) != 2 {
+		t.Fatalf("expected 2 calls, got %#v", calls)
+	}
+	if calls[0].Name != "bash" || calls[1].Name != "read" {
+		t.Fatalf("expected canonical names [bash read], got %#v", calls)
+	}
+}
+
+func TestParseStandaloneToolCallsSupportsFunctionWrapperStyle(t *testing.T) {
+	text := `<function><name>shell</name><parameter name="command">["pwd"]</parameter><parameter name="workdir">"D:\\git_repos\\ds2api"</parameter></function>`
+	calls := ParseStandaloneToolCalls(text, []string{"shell_command"})
+	if len(calls) != 1 {
+		t.Fatalf("expected one parsed call, got %#v", calls)
+	}
+	if calls[0].Name != "shell" {
+		t.Fatalf("expected tool name shell, got %q", calls[0].Name)
+	}
+	if calls[0].Input["command"] == nil {
+		t.Fatalf("expected command argument, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsBypassesAllowListWhenNotToolChoiceNone(t *testing.T) {
+	text := `<invoke name="shell"><parameter name="command">["pwd"]</parameter></invoke>`
+	calls := ParseStandaloneToolCalls(text, []string{"shell_command"})
+	if len(calls) != 1 {
+		t.Fatalf("expected parsed call to bypass allow-list mismatch, got %#v", calls)
+	}
+	if calls[0].Name != "shell" {
+		t.Fatalf("expected original name shell, got %#v", calls[0].Name)
+	}
+}
+
+func TestParseStandaloneToolCallsKeepsToolChoiceNoneBlock(t *testing.T) {
+	text := `<invoke name="shell"><parameter name="command">["pwd"]</parameter></invoke>`
+	calls := ParseStandaloneToolCalls(text, []string{"__tool_choice_none_block__"})
+	if len(calls) != 0 {
+		t.Fatalf("expected no calls for tool_choice none sentinel, got %#v", calls)
+	}
+}
+
 func TestParseToolCallsSupportsNestedToolTagStyle(t *testing.T) {
 	text := `<tool_call><tool name="Bash"><command>pwd</command><description>show cwd</description></tool></tool_call>`
 	calls := ParseToolCalls(text, []string{"bash"})

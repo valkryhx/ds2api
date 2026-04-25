@@ -625,7 +625,7 @@ func TestHandleResponsesStreamRequiredMalformedToolPayloadFails(t *testing.T) {
 	}
 }
 
-func TestHandleResponsesStreamRejectsUnknownToolName(t *testing.T) {
+func TestHandleResponsesStreamAllowsUnknownToolName(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
 	rec := httptest.NewRecorder()
@@ -646,8 +646,8 @@ func TestHandleResponsesStreamRejectsUnknownToolName(t *testing.T) {
 
 	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"read_file"}, util.DefaultToolChoicePolicy(), "")
 	body := rec.Body.String()
-	if strings.Contains(body, "event: response.function_call_arguments.done") {
-		t.Fatalf("did not expect function_call events for unknown tool, body=%s", body)
+	if !strings.Contains(body, "event: response.function_call_arguments.done") {
+		t.Fatalf("expected function_call events for unknown tool, body=%s", body)
 	}
 }
 

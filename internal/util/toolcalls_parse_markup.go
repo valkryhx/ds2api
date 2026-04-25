@@ -35,8 +35,8 @@ func parseXMLToolCalls(text string) []ParsedToolCall {
 	if calls := parseAntmlFunctionCallStyles(text); len(calls) > 0 {
 		return calls
 	}
-	if call, ok := parseInvokeFunctionCallStyle(text); ok {
-		return []ParsedToolCall{call}
+	if calls := parseInvokeFunctionCallStyles(text); len(calls) > 0 {
+		return calls
 	}
 	return nil
 }
@@ -216,7 +216,33 @@ func parseSingleAntmlFunctionCallMatch(m []string) (ParsedToolCall, bool) {
 }
 
 func parseInvokeFunctionCallStyle(text string) (ParsedToolCall, bool) {
-	m := invokeCallPattern.FindStringSubmatch(text)
+	calls := parseInvokeFunctionCallStyles(text)
+	if len(calls) == 0 {
+		return ParsedToolCall{}, false
+	}
+	return calls[0], true
+}
+
+func parseInvokeFunctionCallStyles(text string) []ParsedToolCall {
+	matches := invokeCallPattern.FindAllStringSubmatch(text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	out := make([]ParsedToolCall, 0, len(matches))
+	for _, m := range matches {
+		call, ok := parseSingleInvokeFunctionCallMatch(m)
+		if !ok {
+			continue
+		}
+		out = append(out, call)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func parseSingleInvokeFunctionCallMatch(m []string) (ParsedToolCall, bool) {
 	if len(m) < 3 {
 		return ParsedToolCall{}, false
 	}
@@ -232,7 +258,11 @@ func parseInvokeFunctionCallStyle(text string) (ParsedToolCall, bool) {
 		k := strings.TrimSpace(pm[1])
 		v := strings.TrimSpace(pm[2])
 		if k != "" {
-			input[k] = v
+			if parsed, ok := parseJSONValue(v); ok {
+				input[k] = parsed
+			} else {
+				input[k] = v
+			}
 		}
 	}
 	if len(input) == 0 {
