@@ -83,17 +83,24 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		return result
 	}
 
-	candidates := []string{trimmed}
-	if fencedPayload, ok := extractStandaloneFencedPayload(trimmed); ok {
+	// Preprocess: strip thinking blocks (e.g., <thinking>...</thinking>) which
+	// can interfere with tool call extraction, especially for deepseek-v4-pro-think model.
+	cleaned := stripThinkingBlocks(trimmed)
+	if cleaned == "" {
+		cleaned = trimmed // fallback
+	}
+
+	candidates := []string{cleaned}
+	if fencedPayload, ok := extractStandaloneFencedPayload(cleaned); ok {
 		// Fallback: allow fenced payload only when the whole response is the fenced block.
 		candidates = append([]string{fencedPayload}, candidates...)
-	} else if trailingPayload, prefix, ok := extractTrailingStandaloneJSONObjectCandidate(trimmed); ok {
+	} else if trailingPayload, prefix, ok := extractTrailingStandaloneJSONObjectCandidate(cleaned); ok {
 		// Allow "prose + trailing tool payload" when the tail is a pure JSON object and
 		// the prose does not look like an explicit example context.
 		if !looksLikeToolExamplePrefix(prefix) {
 			candidates = append([]string{trailingPayload}, candidates...)
 		}
-	} else if looksLikeToolExampleContext(trimmed) {
+	} else if looksLikeToolExampleContext(cleaned) {
 		return result
 	}
 	for _, c := range candidates {

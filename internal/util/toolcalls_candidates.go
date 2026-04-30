@@ -201,27 +201,61 @@ func extractStandaloneFencedPayload(text string) (string, bool) {
 	return payload, true
 }
 
+// stripThinkingBlocks removes common thinking/reasoning blocks from model output.
+// It handles:
+//   - <thinking>...</thinking> (XML-style)
+//   - ```think ... ``` or ```thinking ... ``` (code fences)
+//   - [THINK]...[/THINK] (markdown-style)
+func stripThinkingBlocks(s string) string {
+	if s == "" {
+		return s
+	}
+
+	// Pattern 1: <thinking>...</thinking> (case-insensitive, non-greedy, allow attributes)
+	thinkingTagRegex := regexp.MustCompile(`(?is)<thinking\b[^>]*>.*?</thinking>`)
+	s = thinkingTagRegex.ReplaceAllString(s, "")
+
+	// Pattern 2: ```think ... ``` or ```thinking ... ``` code blocks
+	// Use escaped backticks: \x60\x60\x60 is ` ` `
+	thinkFenceRegex := regexp.MustCompile(`(?s)\x60\x60\x60think\s*\n.*?\n\x60\x60\x60`)
+	s = thinkFenceRegex.ReplaceAllString(s, "")
+	thinkingFenceRegex := regexp.MustCompile(`(?s)\x60\x60\x60thinking\s*\n.*?\n\x60\x60\x60`)
+	s = thinkingFenceRegex.ReplaceAllString(s, "")
+
+	// Pattern 3: [THINK]...[/THINK] (case-insensitive, non-greedy)
+	thinkMarkdownRegex := regexp.MustCompile(`(?is)\[THINK\].*?\[/THINK\]`)
+	s = thinkMarkdownRegex.ReplaceAllString(s, "")
+
+	return strings.TrimSpace(s)
+}
+
 func extractTrailingStandaloneJSONObjectCandidate(text string) (payload string, prefix string, ok bool) {
 	trimmed := strings.TrimSpace(text)
 	if trimmed == "" {
 		return "", "", false
 	}
 
+	// First, strip thinking blocks to clean the input
+	cleaned := stripThinkingBlocks(trimmed)
+	if cleaned == "" {
+		cleaned = trimmed // fallback in case everything was stripped
+	}
+
 	offset := 0
 	for {
-		rel := strings.Index(trimmed[offset:], "{")
+		rel := strings.Index(cleaned[offset:], "{")
 		if rel < 0 {
 			return "", "", false
 		}
 		start := offset + rel
-		obj, end, parsed := extractJSONObject(trimmed, start)
+		obj, end, parsed := extractJSONObject(cleaned, start)
 		if parsed {
-			if strings.TrimSpace(trimmed[end:]) == "" {
-				return strings.TrimSpace(obj), strings.TrimSpace(trimmed[:start]), true
+			if strings.TrimSpace(cleaned[end:]) == "" {
+				return strings.TrimSpace(obj), strings.TrimSpace(cleaned[:start]), true
 			}
 		}
 		offset = start + 1
-		if offset >= len(trimmed) {
+		if offset >= len(cleaned) {
 			return "", "", false
 		}
 	}
