@@ -8,6 +8,7 @@ import (
 )
 
 func FormatOpenAIToolCalls(calls []ParsedToolCall) []map[string]any {
+	calls = NormalizeToolCallInputsForExecution(calls)
 	out := make([]map[string]any, 0, len(calls))
 	for _, c := range calls {
 		args, _ := json.Marshal(c.Input)
@@ -24,6 +25,7 @@ func FormatOpenAIToolCalls(calls []ParsedToolCall) []map[string]any {
 }
 
 func FormatOpenAIStreamToolCalls(calls []ParsedToolCall) []map[string]any {
+	calls = NormalizeToolCallInputsForExecution(calls)
 	out := make([]map[string]any, 0, len(calls))
 	for i, c := range calls {
 		args, _ := json.Marshal(c.Input)

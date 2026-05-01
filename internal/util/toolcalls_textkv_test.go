@@ -6,14 +6,8 @@ import (
 
 func TestParseTextKVToolCalls_Basic(t *testing.T) {
 	text := `
-[TOOL_CALL_HISTORY]
-status: already_called
-origin: assistant
-not_user_input: true
-tool_call_id: call_3fcd15235eb94f7eae3a8de5a9cfa36b
 function.name: execute_command
 function.arguments: {"command":"cd scripts && python check_syntax.py example.py","cwd":null,"timeout":30}
-[/TOOL_CALL_HISTORY]
 
 Some other text thinking...
 `
@@ -26,6 +20,23 @@ Some other text thinking...
 	}
 	if calls[0].Input["command"] != "cd scripts && python check_syntax.py example.py" {
 		t.Fatalf("unexpected command arg: %v", calls[0].Input["command"])
+	}
+}
+
+func TestParseTextKVToolCalls_AlreadyCalledHistoryIgnored(t *testing.T) {
+	text := `
+[TOOL_CALL_HISTORY]
+status: already_called
+origin: assistant
+not_user_input: true
+tool_call_id: call_3fcd15235eb94f7eae3a8de5a9cfa36b
+function.name: execute_command
+function.arguments: {"command":"cd scripts && python check_syntax.py example.py","cwd":null,"timeout":30}
+[/TOOL_CALL_HISTORY]
+`
+	calls := ParseToolCalls(text, []string{"execute_command"})
+	if len(calls) != 0 {
+		t.Fatalf("expected already_called history block to be ignored, got %#v", calls)
 	}
 }
 
@@ -194,5 +205,23 @@ func TestParseTextKVToolCalls_ToolUseLabelInlineDirectParen(t *testing.T) {
 	}
 	if calls[0].Input["command"] != "date +%Y-%m-%d" {
 		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
+func TestNormalizeToolCallInputsForExecution_UnwrapsCommandCDATA(t *testing.T) {
+	calls := []ParsedToolCall{
+		{
+			Name: "Bash",
+			Input: map[string]any{
+				"command": "   <![CDATA[git -C D:/git_repos/ds2api log --oneline -10]]>   ",
+			},
+		},
+	}
+	got := NormalizeToolCallInputsForExecution(calls)
+	if len(got) != 1 {
+		t.Fatalf("expected one call, got %#v", got)
+	}
+	if got[0].Input["command"] != "git -C D:/git_repos/ds2api log --oneline -10" {
+		t.Fatalf("unexpected normalized command: %#v", got[0].Input["command"])
 	}
 }

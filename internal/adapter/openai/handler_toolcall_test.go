@@ -417,6 +417,39 @@ func TestHandleNonStreamDirectBashTagToolCallIntercepted(t *testing.T) {
 	}
 }
 
+func TestHandleNonStreamBashCommandCDATAArgumentsAreSanitized(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"{\"tool_calls\":[{\"name\":\"Bash\",\"input\":{\"command\":\"<![CDATA[git -C D:/git_repos/ds2api log --oneline -10]]>\"}}]}"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2-cdata", "deepseek-chat", "prompt", false, []string{"Bash"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call, got %#v", msg["tool_calls"])
+	}
+	tc, _ := toolCalls[0].(map[string]any)
+	fn, _ := tc["function"].(map[string]any)
+	argsRaw, _ := fn["arguments"].(string)
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+		t.Fatalf("decode arguments failed: %v raw=%s", err, argsRaw)
+	}
+	if args["command"] != "git -C D:/git_repos/ds2api log --oneline -10" {
+		t.Fatalf("expected CDATA unwrapped command, got %#v", args["command"])
+	}
+}
+
 func TestHandleNonStreamToolCallHistoryPayloadWithAlreadyCalledIgnored(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
