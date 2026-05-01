@@ -40,6 +40,25 @@ function.arguments: {"command":"cd scripts && python check_syntax.py example.py"
 	}
 }
 
+func TestParseTextKVToolCalls_AlreadyReturnedToolResultHistoryIgnored(t *testing.T) {
+	text := `
+[TOOL_RESULT_HISTORY]
+status: already_returned
+origin: tool_runtime
+not_user_input: true
+tool_call_id: call_3fcd15235eb94f7eae3a8de5a9cfa36b
+name: Bash
+content: Bash(<![CDATA[git -C D:/git_repos/ds2api log --oneline -10]]>)
+Error: Exit code 2
+/usr/bin/bash: eval: line 1: syntax error near unexpected token 'newline'
+[/TOOL_RESULT_HISTORY]
+`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 0 {
+		t.Fatalf("expected already_returned tool result block to be ignored, got %#v", calls)
+	}
+}
+
 func TestParseTextKVToolCalls_Multiple(t *testing.T) {
 	text := `
 function.name: read_file

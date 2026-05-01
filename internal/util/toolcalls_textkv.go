@@ -10,9 +10,11 @@ var callMarkerPattern = regexp.MustCompile(`(?is)\[\s*(?:调用|call)\s+([a-zA-Z
 var toolUseLabelPattern = regexp.MustCompile(`(?is)^\s*(?:tool\s*use|tool\s*call|调用工具)\s*:\s*(.*)$`)
 var directParenCallNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_\-.]*$`)
 var toolCallHistoryBlockPattern = regexp.MustCompile(`(?is)\[TOOL_CALL_HISTORY\](.*?)\[/TOOL_CALL_HISTORY\]`)
+var toolResultHistoryBlockPattern = regexp.MustCompile(`(?is)\[TOOL_RESULT_HISTORY\](.*?)\[/TOOL_RESULT_HISTORY\]`)
 
 func parseTextKVToolCalls(text string) []ParsedToolCall {
 	text = stripAlreadyCalledToolHistoryBlocks(text)
+	text = stripAlreadyReturnedToolResultHistoryBlocks(text)
 	if calls := parseFunctionNameStyleToolCalls(text); len(calls) > 0 {
 		return calls
 	}
@@ -32,6 +34,19 @@ func stripAlreadyCalledToolHistoryBlocks(text string) string {
 	return toolCallHistoryBlockPattern.ReplaceAllStringFunc(text, func(block string) string {
 		lower := strings.ToLower(block)
 		if strings.Contains(lower, "status: already_called") || strings.Contains(lower, "not_user_input: true") {
+			return ""
+		}
+		return block
+	})
+}
+
+func stripAlreadyReturnedToolResultHistoryBlocks(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	return toolResultHistoryBlockPattern.ReplaceAllStringFunc(text, func(block string) string {
+		lower := strings.ToLower(block)
+		if strings.Contains(lower, "status: already_returned") || strings.Contains(lower, "not_user_input: true") {
 			return ""
 		}
 		return block
