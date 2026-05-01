@@ -120,6 +120,9 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 			if hasUnclosedCodeFence(s.text.String()) {
 				continue
 			}
+			if util.HasMalformedToolCallFragment(s.text.String()) {
+				continue
+			}
 			detected := util.ParseToolCalls(s.text.String(), s.toolNames)
 			if len(detected) > 0 {
 				s.finalize("tool_use")

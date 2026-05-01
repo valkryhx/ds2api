@@ -9,8 +9,10 @@ var textKVNamePattern = regexp.MustCompile(`(?is)function\.name:\s*([a-zA-Z0-9_\
 var callMarkerPattern = regexp.MustCompile(`(?is)\[\s*(?:调用|call)\s+([a-zA-Z0-9_\-.]+)\s*\]`)
 var toolUseLabelPattern = regexp.MustCompile(`(?is)^\s*(?:tool\s*use|tool\s*call|调用工具)\s*:\s*(.*)$`)
 var directParenCallNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_\-.]*$`)
+var toolCallHistoryBlockPattern = regexp.MustCompile(`(?is)\[TOOL_CALL_HISTORY\](.*?)\[/TOOL_CALL_HISTORY\]`)
 
 func parseTextKVToolCalls(text string) []ParsedToolCall {
+	text = stripAlreadyCalledToolHistoryBlocks(text)
 	if calls := parseFunctionNameStyleToolCalls(text); len(calls) > 0 {
 		return calls
 	}
@@ -21,6 +23,19 @@ func parseTextKVToolCalls(text string) []ParsedToolCall {
 		return calls
 	}
 	return parseToolUseLabelStyleToolCalls(text)
+}
+
+func stripAlreadyCalledToolHistoryBlocks(text string) string {
+	if strings.TrimSpace(text) == "" {
+		return text
+	}
+	return toolCallHistoryBlockPattern.ReplaceAllStringFunc(text, func(block string) string {
+		lower := strings.ToLower(block)
+		if strings.Contains(lower, "status: already_called") || strings.Contains(lower, "not_user_input: true") {
+			return ""
+		}
+		return block
+	})
 }
 
 func parseFunctionNameStyleToolCalls(text string) []ParsedToolCall {
@@ -147,10 +162,45 @@ func parseSingleDirectParenCall(raw string) (ParsedToolCall, bool) {
 	if argsRaw == "" {
 		return ParsedToolCall{}, false
 	}
+	if isShellLikeDirectParenTool(name) {
+		normalized, ok := normalizeShellLikeDirectParenArg(argsRaw)
+		if !ok {
+			return ParsedToolCall{}, false
+		}
+		argsRaw = normalized
+	}
 	return ParsedToolCall{
 		Name:  name,
 		Input: parseDirectParenInput(name, argsRaw),
 	}, true
+}
+
+func isShellLikeDirectParenTool(name string) bool {
+	switch strings.ToLower(strings.TrimSpace(name)) {
+	case "bash", "shell", "shell_command", "execute_command", "powershell", "cmd", "terminal":
+		return true
+	default:
+		return false
+	}
+}
+
+func normalizeShellLikeDirectParenArg(argsRaw string) (string, bool) {
+	trimmed := strings.TrimSpace(argsRaw)
+	if trimmed == "" {
+		return "", false
+	}
+	if m := cdataPattern.FindStringSubmatch(trimmed); len(m) >= 2 {
+		inner := strings.TrimSpace(m[1])
+		if inner == "" {
+			return "", false
+		}
+		return inner, true
+	}
+	if strings.HasPrefix(strings.ToLower(trimmed), "<![cdata[") {
+		// Refuse malformed/dangling CDATA in shell-like direct calls.
+		return "", false
+	}
+	return trimmed, true
 }
 
 func parseToolUseLabelStyleToolCalls(text string) []ParsedToolCall {
