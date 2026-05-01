@@ -53,51 +53,53 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy util.ToolCh
 	if len(toolSchemas) == 0 {
 		return messages, names
 	}
+	dsmlFormat := []string{
+		"TOOL CALL FORMAT — FOLLOW EXACTLY:",
+		"",
+		"<|DSML|tool_calls>",
+		`  <|DSML|invoke name="TOOL_NAME_HERE">`,
+		`    <|DSML|parameter name="PARAMETER_NAME"><![CDATA[PARAMETER_VALUE]]></|DSML|parameter>`,
+		"  </|DSML|invoke>",
+		"</|DSML|tool_calls>",
+		"",
+		"RULES:",
+		"1) Use the <|DSML|tool_calls> wrapper format.",
+		"2) Put one or more <|DSML|invoke> entries under a single <|DSML|tool_calls> root.",
+		"3) Put the tool name in invoke name attribute: <|DSML|invoke name=\"TOOL_NAME\">.",
+		"4) All string values should prefer <![CDATA[...]]>, including code/scripts/paths/prompts.",
+		"5) Every top-level argument should be a <|DSML|parameter name=\"ARG_NAME\">...</|DSML|parameter> node.",
+		"6) Objects use nested XML elements inside the parameter body. Arrays may repeat <item> children.",
+		"7) Numbers/booleans/null may stay plain text.",
+		"8) Do NOT wrap XML in markdown fences. Do NOT output explanations/role markers/internal monologue.",
+		"9) If you call a tool, first non-whitespace chars of that block must be <|DSML|tool_calls>.",
+		"10) Never omit the opening <|DSML|tool_calls> tag.",
+		"11) Compatibility: runtime also accepts legacy <tool_calls>/<invoke>/<parameter> tags.",
+	}
 	toolPrompt := strings.Join([]string{
 		"You have access to these tools:",
 		"",
 		strings.Join(toolSchemas, "\n\n"),
 		"",
-		"TOOL CALL OUTPUT CONTRACT (STRICT)",
-		"When you need to call tools, output ONLY a raw JSON object (no markdown fences, no prose) like this:",
-		`{"tool_calls": [{"name": "tool_name", "input": {"param": "value"}}]}`,
-		"",
-		"EXAMPLE",
-		"User: Please check the weather in Beijing and Shanghai, and update my todo list.",
-		"Assistant:",
-		`{"tool_calls": [`,
-		`  {"name": "get_weather", "input": {"city": "Beijing"}},`,
-		`  {"name": "get_weather", "input": {"city": "Shanghai"}},`,
-		`  {"name": "update_todo", "input": {"todos": [{"content": "Buy milk"}, {"content": "Write report"}]}}`,
-		"]}",
+		strings.Join(dsmlFormat, "\n"),
 		"",
 		"History markers in conversation:",
 		"- [TOOL_CALL_HISTORY]...[/TOOL_CALL_HISTORY] means a tool call you already made earlier.",
 		"- [TOOL_RESULT_HISTORY]...[/TOOL_RESULT_HISTORY] means the runtime returned a tool result (not user input).",
 		"",
 		"IMPORTANT:",
-		"1) If calling tools, output ONLY the raw JSON object. Do NOT wrap it in ``` fences.",
-		"2) The response must start with '{' and end with '}' when calling tools.",
-		"3) The JSON must contain top-level key \"tool_calls\" with an array value [].",
-		"4) Each call item MUST be exactly this shape: {\"name\": \"...\", \"input\": {...}}.",
-		"5) \"input\" MUST be a JSON object (use {} when no parameters).",
-		"6) JSON SYNTAX STRICTLY REQUIRED: all property names MUST use double quotes.",
-		"7) ARRAY FORMAT: lists MUST be wrapped in [] (never comma-separated objects without brackets).",
-		"8) NEVER use pseudo-call text formats such as '[调用 Read] {...}', '[Call Read] {...}', '调用工具:' or 'Tool use:'.",
-		"9) NEVER use XML/markup call formats like <tool_calls>, <tool_call>, <function_call>, <invoke>, or parameter tags.",
-		"10) Do NOT output function.name/function.arguments text blocks.",
-		"11) Do NOT emit [TOOL_CALL_HISTORY] / [TOOL_RESULT_HISTORY] blocks as new tool calls.",
-		"12) If no tool call is needed, answer normally and do NOT output tool_calls JSON.",
-		"13) After receiving a tool result, you MUST use it to produce the final answer.",
-		"14) Only call another tool when the previous result is missing required data or returned an error.",
-		"15) Do not repeat a tool call that is already satisfied by an existing [TOOL_RESULT_HISTORY] block.",
+		"1) If calling tools, output only tool-call markup block(s). Do not wrap in markdown fences.",
+		"2) Do NOT emit [TOOL_CALL_HISTORY] / [TOOL_RESULT_HISTORY] blocks as new tool calls.",
+		"3) If no tool call is needed, answer normally and do NOT output tool-call markup.",
+		"4) After receiving a tool result, you MUST use it to produce the final answer.",
+		"5) Only call another tool when the previous result is missing required data or returned an error.",
+		"6) Do not repeat a tool call that is already satisfied by an existing [TOOL_RESULT_HISTORY] block.",
 	}, "\n")
 	if policy.Mode == util.ToolChoiceRequired {
-		toolPrompt += "\n5) For this response, you MUST call at least one tool from the allowed list."
+		toolPrompt += "\n7) For this response, you MUST call at least one tool from the allowed list."
 	}
 	if policy.Mode == util.ToolChoiceForced && strings.TrimSpace(policy.ForcedName) != "" {
-		toolPrompt += "\n5) For this response, you MUST call exactly this tool name: " + strings.TrimSpace(policy.ForcedName)
-		toolPrompt += "\n6) Do not call any other tool."
+		toolPrompt += "\n7) For this response, you MUST call exactly this tool name: " + strings.TrimSpace(policy.ForcedName)
+		toolPrompt += "\n8) Do not call any other tool."
 	}
 
 	for i := range messages {

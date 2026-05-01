@@ -201,6 +201,24 @@ func extractStandaloneFencedPayload(text string) (string, bool) {
 	return payload, true
 }
 
+func extractStandaloneFencedPayloadAllowXML(text string) (string, bool) {
+	payload, ok := extractStandaloneFencedPayload(text)
+	if !ok {
+		return "", false
+	}
+	lower := strings.ToLower(payload)
+	if strings.Contains(lower, "<tool_calls") ||
+		strings.Contains(lower, "<|dsml|tool_calls") ||
+		strings.Contains(lower, "<invoke") ||
+		strings.Contains(lower, "<|dsml|invoke") {
+		return payload, true
+	}
+	if strings.Contains(lower, "tool_calls") {
+		return payload, true
+	}
+	return "", false
+}
+
 // stripThinkingBlocks removes common thinking/reasoning blocks from model output.
 // It handles:
 //   - <thinking>...</thinking> (XML-style)

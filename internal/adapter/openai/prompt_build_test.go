@@ -82,7 +82,7 @@ func TestBuildOpenAIFinalPrompt_VercelPreparePathKeepsFinalAnswerInstruction(t *
 	}
 }
 
-func TestBuildOpenAIFinalPrompt_UsesRawJSONToolcallInstruction(t *testing.T) {
+func TestBuildOpenAIFinalPrompt_UsesDSMLToolcallInstruction(t *testing.T) {
 	messages := []any{
 		map[string]any{"role": "user", "content": "run tool"},
 	}
@@ -100,25 +100,13 @@ func TestBuildOpenAIFinalPrompt_UsesRawJSONToolcallInstruction(t *testing.T) {
 	}
 
 	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
-	if !strings.Contains(finalPrompt, "output ONLY the raw JSON object") {
-		t.Fatalf("expected raw JSON instruction, got: %q", finalPrompt)
+	if !strings.Contains(finalPrompt, "<|DSML|tool_calls>") {
+		t.Fatalf("expected DSML wrapper instruction, got: %q", finalPrompt)
 	}
-	if !strings.Contains(finalPrompt, "Do NOT wrap it in ``` fences") {
-		t.Fatalf("expected no-fence instruction, got: %q", finalPrompt)
+	if strings.Contains(finalPrompt, "output ONLY the raw JSON object") {
+		t.Fatalf("did not expect old raw-JSON contract after DSML migration, got: %q", finalPrompt)
 	}
-	if strings.Contains(finalPrompt, "output ONLY a JSON code block") {
-		t.Fatalf("unexpected old fenced instruction left in prompt: %q", finalPrompt)
-	}
-	if !strings.Contains(finalPrompt, "NEVER use pseudo-call text formats such as '[调用 Read] {...}'") {
-		t.Fatalf("expected pseudo-call ban instruction, got: %q", finalPrompt)
-	}
-	if !strings.Contains(finalPrompt, "Do NOT output function.name/function.arguments text blocks.") {
-		t.Fatalf("expected function.name/function.arguments ban instruction, got: %q", finalPrompt)
-	}
-	if !strings.Contains(finalPrompt, "NEVER use XML/markup call formats like <tool_calls>, <tool_call>, <function_call>, <invoke>") {
-		t.Fatalf("expected xml/markup call ban instruction, got: %q", finalPrompt)
-	}
-	if !strings.Contains(finalPrompt, "The JSON must contain top-level key \"tool_calls\" with an array value []") {
-		t.Fatalf("expected strict top-level tool_calls contract, got: %q", finalPrompt)
+	if strings.Contains(finalPrompt, "NEVER use XML/markup call formats") {
+		t.Fatalf("did not expect XML/DSML ban after migration, got: %q", finalPrompt)
 	}
 }

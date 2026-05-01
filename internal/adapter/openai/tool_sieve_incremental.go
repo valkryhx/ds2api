@@ -19,7 +19,7 @@ func buildIncrementalToolDeltas(state *toolStreamSieveState) []toolCallDelta {
 	if start < 0 {
 		return nil
 	}
-	if insideCodeFence(state.recentTextTail + captured[:start]) {
+	if insideCodeFenceWithState(state, captured[:start]) {
 		return nil
 	}
 	certainSingle, hasMultiple := classifyToolCallsIncrementalSafety(captured, keyIdx)

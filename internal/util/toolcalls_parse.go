@@ -1,10 +1,6 @@
 package util
 
-import (
-	"encoding/json"
-	"regexp"
-	"strings"
-)
+import "strings"
 
 type ParsedToolCall struct {
 	Name  string         `json:"name"`
@@ -82,6 +78,25 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 	if trimmed == "" {
 		return result
 	}
+	if fencedPayload, ok := extractStandaloneFencedPayload(trimmed); ok {
+		if strings.Contains(strings.ToLower(fencedPayload), "tool_calls") {
+			parsed := parseToolCallsPayload(fencedPayload)
+			if len(parsed) > 0 {
+				calls, rejectedNames := filterToolCallsDetailed(parsed, availableToolNames)
+				if len(calls) == 0 && shouldBypassToolAllowList(availableToolNames) {
+					calls = normalizeParsedToolCallsNoPolicy(parsed)
+					if len(calls) > 0 {
+						rejectedNames = nil
+					}
+				}
+				result.Calls = calls
+				result.RejectedToolNames = rejectedNames
+				result.RejectedByPolicy = len(rejectedNames) > 0 && len(calls) == 0
+				result.SawToolCallSyntax = len(parsed) > 0
+				return result
+			}
+		}
+	}
 
 	// Preprocess: strip thinking blocks (e.g., <thinking>...</thinking>) which
 	// can interfere with tool call extraction, especially for deepseek-v4-pro-think model.
@@ -92,8 +107,11 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 
 	candidates := []string{cleaned}
 	if fencedPayload, ok := extractStandaloneFencedPayload(cleaned); ok {
-		// Fallback: allow fenced payload only when the whole response is the fenced block.
-		candidates = append([]string{fencedPayload}, candidates...)
+		// Compatibility: standalone fenced JSON snippets are examples by default.
+		// Only allow fenced payloads when they are XML/DSML-style tool markup.
+		if parsed := parseMarkupToolCalls(fencedPayload); len(parsed) > 0 {
+			candidates = append([]string{fencedPayload}, candidates...)
+		}
 	} else if trailingPayload, prefix, ok := extractTrailingStandaloneJSONObjectCandidate(cleaned); ok {
 		// Allow "prose + trailing tool payload" when the tail is a pure JSON object and
 		// the prose does not look like an explicit example context.
@@ -143,6 +161,31 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		}
 	}
 	return result
+}
+
+func parseMarkupToolCalls(text string) []ParsedToolCall {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+	normalized, ok := normalizeDSMLToolCallMarkup(trimmed)
+	if !ok {
+		return nil
+	}
+	parsed := parseXMLToolCalls(normalized)
+	if len(parsed) == 0 {
+		parsed = parseMarkupToolCallsLegacy(normalized)
+	}
+	if len(parsed) == 0 && strings.Contains(strings.ToLower(normalized), "<![cdata[") {
+		recovered := SanitizeLooseCDATA(normalized)
+		if recovered != normalized {
+			parsed = parseXMLToolCalls(recovered)
+			if len(parsed) == 0 {
+				parsed = parseMarkupToolCallsLegacy(recovered)
+			}
+		}
+	}
+	return parsed
 }
 
 func normalizeParsedToolCallsNoPolicy(parsed []ParsedToolCall) []ParsedToolCall {
@@ -271,11 +314,16 @@ func parseToolCallPayloadValue(decoded any) []ParsedToolCall {
 
 func looksLikeToolCallSyntax(text string) bool {
 	lower := strings.ToLower(text)
-	return strings.Contains(lower, "tool_calls") ||
-		strings.Contains(lower, "<tool_call") ||
+	if strings.Contains(lower, "tool_calls") || strings.Contains(lower, "function.name:") {
+		return true
+	}
+	hasDSML, hasCanonical := ContainsToolCallWrapperSyntaxOutsideIgnored(text)
+	if hasDSML || hasCanonical {
+		return true
+	}
+	return strings.Contains(lower, "<tool_call") ||
 		strings.Contains(lower, "<function_call") ||
-		strings.Contains(lower, "<invoke") ||
-		strings.Contains(lower, "function.name:")
+		strings.Contains(lower, "<invoke")
 }
 
 func parseToolCallList(v any) []ParsedToolCall {
@@ -366,126 +414,4 @@ func extractImplicitToolInput(m map[string]any) (map[string]any, bool) {
 		return nil, false
 	}
 	return out, true
-}
-
-func parseToolCallInput(v any) map[string]any {
-	switch x := v.(type) {
-	case nil:
-		return map[string]any{}
-	case map[string]any:
-		return x
-	case string:
-		raw := strings.TrimSpace(x)
-		if raw == "" {
-			return map[string]any{}
-		}
-		var parsed map[string]any
-		if err := json.Unmarshal([]byte(raw), &parsed); err == nil && parsed != nil {
-			return parsed
-		}
-		// Try to repair invalid backslashes (common in Windows paths output by models)
-		repaired := repairInvalidJSONBackslashes(raw)
-		if repaired != raw {
-			if err := json.Unmarshal([]byte(repaired), &parsed); err == nil && parsed != nil {
-				return parsed
-			}
-		}
-		// Try to repair loose JSON in string argument as well
-		repairedLoose := RepairLooseJSON(raw)
-		if repairedLoose != raw {
-			if err := json.Unmarshal([]byte(repairedLoose), &parsed); err == nil && parsed != nil {
-				return parsed
-			}
-		}
-		// Last resort: tolerate unclosed strings/brackets and trailing commas.
-		if recovered, _, ok := decodeToolCallJSONPayload(raw); ok {
-			if obj, ok := recovered.(map[string]any); ok && obj != nil {
-				return obj
-			}
-		}
-		return map[string]any{"_raw": raw}
-	default:
-		b, err := json.Marshal(x)
-		if err != nil {
-			return map[string]any{}
-		}
-		var parsed map[string]any
-		if err := json.Unmarshal(b, &parsed); err == nil && parsed != nil {
-			return parsed
-		}
-		return map[string]any{}
-	}
-}
-
-func repairInvalidJSONBackslashes(s string) string {
-	if !strings.Contains(s, "\\") {
-		return s
-	}
-	var out strings.Builder
-	out.Grow(len(s) + 10)
-	runes := []rune(s)
-	for i := 0; i < len(runes); i++ {
-		if runes[i] == '\\' {
-			if i+1 < len(runes) {
-				next := runes[i+1]
-				switch next {
-				case '"', '\\', '/', 'b', 'f', 'n', 'r', 't':
-					out.WriteRune('\\')
-					out.WriteRune(next)
-					i++
-					continue
-				case 'u':
-					if i+5 < len(runes) {
-						isHex := true
-						for j := 1; j <= 4; j++ {
-							r := runes[i+1+j]
-							if !((r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')) {
-								isHex = false
-								break
-							}
-						}
-						if isHex {
-							out.WriteRune('\\')
-							out.WriteRune('u')
-							for j := 1; j <= 4; j++ {
-								out.WriteRune(runes[i+1+j])
-							}
-							i += 5
-							continue
-						}
-					}
-				}
-			}
-			// Not a valid escape sequence, double it
-			out.WriteString("\\\\")
-		} else {
-			out.WriteRune(runes[i])
-		}
-	}
-	return out.String()
-}
-
-var unquotedKeyPattern = regexp.MustCompile(`([{,]\s*)([a-zA-Z_][a-zA-Z0-9_]*)\s*:`)
-
-// missingArrayBracketsPattern identifies a sequence of two or more JSON objects separated by commas
-// that immediately follow a colon, which indicates a missing array bracket `[` `]`.
-// E.g., "key": {"a": 1}, {"b": 2} -> "key": [{"a": 1}, {"b": 2}]
-// NOTE: The pattern uses (?:[^{}]|\{[^{}]*\})* to support single-level nested {} objects,
-// which handles cases like {"content": "x", "input": {"q": "y"}}
-var missingArrayBracketsPattern = regexp.MustCompile(`(:\s*)(\{(?:[^{}]|\{[^{}]*\})*\}(?:\s*,\s*\{(?:[^{}]|\{[^{}]*\})*\})+)`)
-
-func RepairLooseJSON(s string) string {
-	s = strings.TrimSpace(s)
-	if s == "" {
-		return s
-	}
-	// 1. Replace unquoted keys: {key: -> {"key":
-	s = unquotedKeyPattern.ReplaceAllString(s, `$1"$2":`)
-
-	// 2. Heuristic: Fix missing array brackets for list of objects
-	// e.g., : {obj1}, {obj2} -> : [{obj1}, {obj2}]
-	// This specifically addresses DeepSeek's "list hallucination"
-	s = missingArrayBracketsPattern.ReplaceAllString(s, `$1[$2]`)
-
-	return s
 }

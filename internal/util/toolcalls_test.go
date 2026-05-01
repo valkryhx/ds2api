@@ -316,6 +316,17 @@ func TestParseToolCallsSupportsAntmlFunctionCallStyle(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
+	text := `<|DSML|tool_calls><|DSML|invoke name="Bash"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 DSML call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" || calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected DSML parse result: %#v", calls[0])
+	}
+}
+
 func TestParseToolCallsSupportsAntmlArgumentStyle(t *testing.T) {
 	text := `<antml:function_calls><antml:function_call id="1" name="Bash"><antml:argument name="command">pwd</antml:argument><antml:argument name="description">x</antml:argument></antml:function_call></antml:function_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})
