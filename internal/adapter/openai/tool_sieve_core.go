@@ -59,7 +59,7 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 		if pending == "" {
 			break
 		}
-		start := findToolSegmentStart(state, pending)
+		start := findToolSegmentStart(state, pending, toolNames)
 		if start >= 0 {
 			prefix := pending[:start]
 			if prefix != "" {
@@ -73,7 +73,7 @@ func processToolSieveChunk(state *toolStreamSieveState, chunk string, toolNames 
 			continue
 		}
 
-		safe, hold := splitSafeContentForToolDetection(state, pending)
+		safe, hold := splitSafeContentForToolDetection(state, pending, toolNames)
 		if safe == "" {
 			break
 		}
@@ -163,7 +163,7 @@ func flushToolSieve(state *toolStreamSieveState, toolNames []string) []toolStrea
 	return events
 }
 
-func splitSafeContentForToolDetection(state *toolStreamSieveState, s string) (safe, hold string) {
+func splitSafeContentForToolDetection(state *toolStreamSieveState, s string, toolNames []string) (safe, hold string) {
 	if s == "" {
 		return "", ""
 	}
@@ -186,10 +186,19 @@ func splitSafeContentForToolDetection(state *toolStreamSieveState, s string) (sa
 		}
 		return "", s
 	}
+	if directIdx := findPartialDirectToolTagStart(s, toolNames); directIdx >= 0 {
+		if insideCodeFenceWithState(state, s[:directIdx]) {
+			return s, ""
+		}
+		if directIdx > 0 {
+			return s[:directIdx], s[directIdx:]
+		}
+		return "", s
+	}
 	return s, ""
 }
 
-func findToolSegmentStart(state *toolStreamSieveState, s string) int {
+func findToolSegmentStart(state *toolStreamSieveState, s string, toolNames []string) int {
 	if s == "" {
 		return -1
 	}
@@ -209,7 +218,7 @@ func findToolSegmentStart(state *toolStreamSieveState, s string) int {
 			}
 		}
 		if bestKeyIdx < 0 {
-			return -1
+			break
 		}
 		keyIdx := bestKeyIdx
 		start := keyIdx
@@ -224,6 +233,12 @@ func findToolSegmentStart(state *toolStreamSieveState, s string) int {
 		}
 		offset = keyIdx + len(matchedKeyword)
 	}
+	if directIdx := findDirectToolTagStart(s, toolNames); directIdx >= 0 {
+		if !insideCodeFenceWithState(state, s[:directIdx]) {
+			return directIdx
+		}
+	}
+	return -1
 }
 
 func includeDuplicateLeadingLessThan(s string, idx int) int {
@@ -367,6 +382,9 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		if hasOpenXMLToolTag(captured) || shouldKeepBareInvokeCapture(captured) {
 			return "", nil, "", false
 		}
+		if hasOpenDirectToolTag(captured, toolNames) {
+			return "", nil, "", false
+		}
 		return captured, nil, "", true
 	}
 
@@ -404,6 +422,9 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		if hasOpenXMLToolTag(captured) || shouldKeepBareInvokeCapture(captured) {
 			return "", nil, "", false
 		}
+		if hasOpenDirectToolTag(captured, toolNames) {
+			return "", nil, "", false
+		}
 		return captured, nil, "", true
 	}
 
@@ -436,6 +457,17 @@ var toolSieveKeywords = []string{
 	"<invoke",
 	"<tool_call",
 	"<function_call",
+	"<bash",
+	"<shell",
+	"<shell_command",
+	"<execute_command",
+	"<powershell",
+	"<cmd",
+	"<terminal",
+	"<read",
+	"<read_file",
+	"<cat",
+	"<glob",
 	"tool_calls",
 	"function.name:",
 	"[tool_call_history]",
@@ -451,4 +483,257 @@ func isStructuredToolKeyword(kw string) bool {
 	default:
 		return false
 	}
+}
+
+var directToolTagFallbackNames = []string{
+	"bash",
+	"shell",
+	"shell_command",
+	"execute_command",
+	"powershell",
+	"cmd",
+	"terminal",
+	"read",
+	"read_file",
+	"cat",
+	"glob",
+}
+
+func findDirectToolTagStart(s string, toolNames []string) int {
+	if s == "" {
+		return -1
+	}
+	allowed := buildDirectToolTagLookup(toolNames)
+	lower := strings.ToLower(s)
+	for i := 0; i < len(s); i++ {
+		if s[i] != '<' {
+			continue
+		}
+		local, _, ok := scanDirectOpenTag(s, lower, i)
+		if !ok {
+			continue
+		}
+		if _, ok := allowed[local]; ok {
+			return i
+		}
+	}
+	return -1
+}
+
+func hasOpenDirectToolTag(captured string, toolNames []string) bool {
+	if captured == "" {
+		return false
+	}
+	allowed := buildDirectToolTagLookup(toolNames)
+	lower := strings.ToLower(captured)
+	for i := 0; i < len(captured); i++ {
+		if captured[i] != '<' {
+			continue
+		}
+		local, bodyStart, ok := scanDirectOpenTag(captured, lower, i)
+		if !ok {
+			continue
+		}
+		if _, ok := allowed[local]; !ok {
+			continue
+		}
+		if _, _, closed := findDirectCloseTag(captured, lower, bodyStart, local); !closed {
+			return true
+		}
+	}
+	return false
+}
+
+func findPartialDirectToolTagStart(s string, toolNames []string) int {
+	if s == "" {
+		return -1
+	}
+	lastLT := strings.LastIndex(s, "<")
+	if lastLT < 0 {
+		return -1
+	}
+	start := includeDuplicateLeadingLessThan(s, lastLT)
+	tail := s[start:]
+	if strings.Contains(tail, ">") {
+		return -1
+	}
+
+	allowed := buildDirectToolTagLookup(toolNames)
+	lowerTail := strings.ToLower(tail)
+	if !strings.HasPrefix(lowerTail, "<") || strings.HasPrefix(lowerTail, "</") {
+		return -1
+	}
+
+	nameStart := 1
+	nameEnd := nameStart
+	for nameEnd < len(lowerTail) && isDirectToolTagNameChar(lowerTail[nameEnd]) {
+		nameEnd++
+	}
+	if nameEnd == nameStart {
+		return -1
+	}
+	raw := lowerTail[nameStart:nameEnd]
+	local := raw
+	if idx := strings.LastIndex(raw, ":"); idx >= 0 && idx+1 < len(raw) {
+		local = raw[idx+1:]
+	}
+	if _, ok := allowed[local]; !ok {
+		// Allow prefix match for streaming partial tags like "<bas".
+		for k := range allowed {
+			if strings.HasPrefix(k, local) {
+				return start
+			}
+		}
+		return -1
+	}
+	return start
+}
+
+func buildDirectToolTagLookup(toolNames []string) map[string]struct{} {
+	out := map[string]struct{}{}
+	add := func(v string) {
+		key := strings.ToLower(strings.TrimSpace(v))
+		if key == "" {
+			return
+		}
+		out[key] = struct{}{}
+		out[strings.ReplaceAll(key, "-", "_")] = struct{}{}
+		out[strings.ReplaceAll(key, "_", "-")] = struct{}{}
+		if idx := strings.LastIndex(key, "."); idx >= 0 && idx+1 < len(key) {
+			local := key[idx+1:]
+			out[local] = struct{}{}
+			out[strings.ReplaceAll(local, "-", "_")] = struct{}{}
+			out[strings.ReplaceAll(local, "_", "-")] = struct{}{}
+		}
+	}
+	for _, name := range directToolTagFallbackNames {
+		add(name)
+	}
+	for _, name := range toolNames {
+		add(name)
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "bash", "shell", "shell_command", "execute_command", "powershell", "cmd", "terminal":
+			for _, a := range []string{"bash", "shell", "shell_command", "execute_command", "powershell", "cmd", "terminal"} {
+				add(a)
+			}
+		case "read", "read_file", "cat":
+			for _, a := range []string{"read", "read_file", "cat"} {
+				add(a)
+			}
+		case "glob":
+			add("glob")
+		}
+	}
+	return out
+}
+
+func scanDirectOpenTag(s, lower string, start int) (local string, bodyStart int, ok bool) {
+	if start < 0 || start >= len(s) || s[start] != '<' {
+		return "", 0, false
+	}
+	if start+1 < len(s) && s[start+1] == '/' {
+		return "", 0, false
+	}
+	nameStart := start + 1
+	nameEnd := nameStart
+	for nameEnd < len(s) && isDirectToolTagNameChar(s[nameEnd]) {
+		nameEnd++
+	}
+	if nameEnd == nameStart {
+		return "", 0, false
+	}
+	raw := lower[nameStart:nameEnd]
+	local = raw
+	if idx := strings.LastIndex(raw, ":"); idx >= 0 && idx+1 < len(raw) {
+		local = raw[idx+1:]
+	}
+	if !hasDirectTagBoundary(s, nameEnd) {
+		return "", 0, false
+	}
+	tagEnd := findDirectTagEnd(s, nameEnd)
+	if tagEnd < 0 {
+		return "", 0, false
+	}
+	if tagEnd > start && s[tagEnd-1] == '/' {
+		return "", 0, false
+	}
+	return local, tagEnd + 1, true
+}
+
+func findDirectCloseTag(s, lower string, from int, local string) (closeStart int, closeEnd int, ok bool) {
+	target := strings.ToLower(strings.TrimSpace(local))
+	for i := maxInt(from, 0); i < len(s); {
+		idx := strings.Index(lower[i:], "</")
+		if idx < 0 {
+			return -1, -1, false
+		}
+		start := i + idx
+		nameStart := start + 2
+		nameEnd := nameStart
+		for nameEnd < len(s) && isDirectToolTagNameChar(s[nameEnd]) {
+			nameEnd++
+		}
+		if nameEnd == nameStart {
+			i = start + 2
+			continue
+		}
+		raw := strings.ToLower(s[nameStart:nameEnd])
+		localName := raw
+		if p := strings.LastIndex(raw, ":"); p >= 0 && p+1 < len(raw) {
+			localName = raw[p+1:]
+		}
+		if localName != target || !hasDirectTagBoundary(s, nameEnd) {
+			i = nameEnd
+			continue
+		}
+		end := findDirectTagEnd(s, nameEnd)
+		if end < 0 {
+			return -1, -1, false
+		}
+		return start, end + 1, true
+	}
+	return -1, -1, false
+}
+
+func isDirectToolTagNameChar(ch byte) bool {
+	return (ch >= 'a' && ch <= 'z') ||
+		(ch >= 'A' && ch <= 'Z') ||
+		(ch >= '0' && ch <= '9') ||
+		ch == '_' ||
+		ch == '-' ||
+		ch == ':' ||
+		ch == '.'
+}
+
+func hasDirectTagBoundary(text string, idx int) bool {
+	if idx >= len(text) {
+		return true
+	}
+	switch text[idx] {
+	case ' ', '\t', '\n', '\r', '>', '/':
+		return true
+	default:
+		return false
+	}
+}
+
+func findDirectTagEnd(text string, from int) int {
+	quote := byte(0)
+	for i := maxInt(from, 0); i < len(text); i++ {
+		ch := text[i]
+		if quote != 0 {
+			if ch == quote {
+				quote = 0
+			}
+			continue
+		}
+		if ch == '"' || ch == '\'' {
+			quote = ch
+			continue
+		}
+		if ch == '>' {
+			return i
+		}
+	}
+	return -1
 }

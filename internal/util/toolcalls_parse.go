@@ -42,6 +42,9 @@ func ParseToolCallsDetailed(text string, availableToolNames []string) ToolCallPa
 			tc = parseMarkupToolCalls(candidate)
 		}
 		if len(tc) == 0 {
+			tc = parseDirectToolTagCalls(candidate, availableToolNames)
+		}
+		if len(tc) == 0 {
 			tc = parseTextKVToolCalls(candidate)
 		}
 		if len(tc) > 0 {
@@ -52,6 +55,9 @@ func ParseToolCallsDetailed(text string, availableToolNames []string) ToolCallPa
 	}
 	if len(parsed) == 0 {
 		parsed = parseXMLToolCalls(text)
+		if len(parsed) == 0 {
+			parsed = parseDirectToolTagCalls(text, availableToolNames)
+		}
 		if len(parsed) == 0 {
 			parsed = parseTextKVToolCalls(text)
 			if len(parsed) == 0 {
@@ -118,6 +124,11 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		if !looksLikeToolExamplePrefix(prefix) {
 			candidates = append([]string{trailingPayload}, candidates...)
 		}
+	} else if trailingTagPayload, prefix, ok := extractTrailingStandaloneDirectTagCandidate(cleaned, availableToolNames); ok {
+		// Compatibility: allow prose followed by direct tool XML tags like <bash>...</bash>.
+		if !looksLikeToolExamplePrefix(prefix) {
+			candidates = append([]string{trailingTagPayload}, candidates...)
+		}
 	} else if looksLikeToolExampleContext(cleaned) {
 		return result
 	}
@@ -138,6 +149,9 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		}
 		if len(parsed) == 0 {
 			parsed = parseMarkupToolCalls(candidate)
+		}
+		if len(parsed) == 0 {
+			parsed = parseDirectToolTagCalls(candidate, availableToolNames)
 		}
 		if len(parsed) == 0 {
 			parsed = parseTextKVToolCalls(candidate)

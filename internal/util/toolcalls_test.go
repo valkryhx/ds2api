@@ -159,7 +159,7 @@ func TestParseStandaloneToolCallsSupportsToolUseLabelStyle(t *testing.T) {
 	}
 }
 
-func TestParseStandaloneToolCallsAllowsMCPWhenAllowListMissing(t *testing.T) {
+func TestParseStandaloneToolCallsIgnoresAlreadyCalledMCPHistoryWhenAllowListMissing(t *testing.T) {
 	text := `[TOOL_CALL_HISTORY]
 status: already_called
 origin: assistant
@@ -169,14 +169,8 @@ function.name: mcp__exa__web_search_exa
 function.arguments: {"query":"马斯克","num_results":10}
 [/TOOL_CALL_HISTORY]`
 	calls := ParseStandaloneToolCalls(text, nil)
-	if len(calls) != 1 {
-		t.Fatalf("expected mcp tool call when allow-list missing, got %#v", calls)
-	}
-	if calls[0].Name != "mcp__exa__web_search_exa" {
-		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
-	}
-	if calls[0].Input["query"] != "马斯克" {
-		t.Fatalf("unexpected query arg: %#v", calls[0].Input)
+	if len(calls) != 0 {
+		t.Fatalf("expected already_called history block to be ignored, got %#v", calls)
 	}
 }
 
@@ -461,6 +455,42 @@ func TestParseStandaloneToolCallsSupportsToolCWithNamedParameterAttribute(t *tes
 	}
 }
 
+func TestParseStandaloneToolCallsSupportsDirectBashTagWithProsePrefix(t *testing.T) {
+	text := "我们有一个commit hash: c8192ae。需要看看这个commit具体改了什么。\n\n<bash> git show c8192ae9036540d454f0876ebe2860834695966d --stat </bash>"
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("expected tool name Bash, got %q", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "git show c8192ae9036540d454f0876ebe2860834695966d --stat" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsSupportsDirectReadTag(t *testing.T) {
+	text := `<read>D:\git_repos\ds2api\README.MD</read>`
+	calls := ParseStandaloneToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("expected tool name Read, got %q", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != `D:\git_repos\ds2api\README.MD` {
+		t.Fatalf("unexpected file_path: %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsDoesNotTreatUnknownDirectTagAsTool(t *testing.T) {
+	text := `<div>hello</div>`
+	calls := ParseStandaloneToolCalls(text, []string{"Bash"})
+	if len(calls) != 0 {
+		t.Fatalf("expected unknown tag not parsed as tool call, got %#v", calls)
+	}
+}
+
 func TestParseStandaloneToolCallsSupportsUserProvidedToolCallMarkupSample(t *testing.T) {
 	text := `<tool_calls>
 <tool_call name="Bash">
@@ -660,6 +690,25 @@ func TestParseToolCallsWithMixedWindowsPaths(t *testing.T) {
 	// 在解析后的 Go map 中，反斜杠应该被还原
 	if !strings.Contains(path, "D:\\git_codes") && !strings.Contains(path, "D:/git_codes") {
 		t.Errorf("expected path to contain Windows style separators, got %q", path)
+	}
+}
+
+func TestParseToolCallsDirectParenShellRejectsDanglingCDATA(t *testing.T) {
+	text := `Bash(<![CDATA[git show --stat HEAD])`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 0 {
+		t.Fatalf("expected dangling CDATA direct-paren shell call to be rejected, got %#v", calls)
+	}
+}
+
+func TestParseToolCallsDirectParenShellUnwrapsCompleteCDATA(t *testing.T) {
+	text := `Bash(<![CDATA[git show --stat HEAD]]>)`
+	calls := ParseToolCalls(text, []string{"Bash"})
+	if len(calls) != 1 {
+		t.Fatalf("expected complete CDATA direct-paren shell call to be parsed, got %#v", calls)
+	}
+	if calls[0].Input["command"] != "git show --stat HEAD" {
+		t.Fatalf("unexpected command after CDATA unwrap: %#v", calls[0].Input)
 	}
 }
 

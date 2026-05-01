@@ -386,7 +386,38 @@ func TestHandleNonStreamToolUseLabelToolCallIntercepted(t *testing.T) {
 	}
 }
 
-func TestHandleNonStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t *testing.T) {
+func TestHandleNonStreamDirectBashTagToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"我们有一个commit hash: c8192ae9036540d454f0876ebe2860834695966d。需要看看这个commit具体改了什么。\n\n<bash> git show c8192ae9036540d454f0876ebe2860834695966d --stat </bash>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid2-tag-bash", "deepseek-chat", "prompt", false, []string{"Bash"})
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d", rec.Code)
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected one tool call from direct bash tag payload, got %#v", msg["tool_calls"])
+	}
+	tc, _ := toolCalls[0].(map[string]any)
+	fn, _ := tc["function"].(map[string]any)
+	if fn["name"] != "Bash" {
+		t.Fatalf("unexpected function name: %#v", fn["name"])
+	}
+}
+
+func TestHandleNonStreamToolCallHistoryPayloadWithAlreadyCalledIgnored(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_2be3b3b84d2e45e2b9e300e40af39164\nfunction.name: mcp__exa__web_search_exa\nfunction.arguments: {\"query\":\"马斯克\",\"num_results\":10}\n[/TOOL_CALL_HISTORY]"}`,
@@ -402,13 +433,16 @@ func TestHandleNonStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t 
 	out := decodeJSONBody(t, rec.Body.String())
 	choices, _ := out["choices"].([]any)
 	choice, _ := choices[0].(map[string]any)
-	if choice["finish_reason"] != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	if choice["finish_reason"] != "stop" {
+		t.Fatalf("expected finish_reason=stop, got %#v", choice["finish_reason"])
 	}
 	msg, _ := choice["message"].(map[string]any)
-	toolCalls, _ := msg["tool_calls"].([]any)
-	if len(toolCalls) != 1 {
-		t.Fatalf("expected one tool call from TOOL_CALL_HISTORY payload, got %#v", msg["tool_calls"])
+	if _, ok := msg["tool_calls"]; ok {
+		t.Fatalf("did not expect tool_calls for already_called history payload, got %#v", msg["tool_calls"])
+	}
+	content, _ := msg["content"].(string)
+	if !strings.Contains(content, "[TOOL_CALL_HISTORY]") {
+		t.Fatalf("expected history payload to remain as content text, got %#v", msg["content"])
 	}
 }
 
@@ -965,6 +999,34 @@ func TestHandleStreamToolUseLabelInlineToolCallIntercepted(t *testing.T) {
 	}
 }
 
+func TestHandleStreamDirectBashTagToolCallIntercepted(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"我们有一个commit hash: c8192ae。需要看看这个commit具体改了什么。\n\n<bash> "}`,
+		`data: {"p":"response/content","v":"git show c8192ae9036540d454f0876ebe2860834695966d --stat "}`,
+		`data: {"p":"response/content","v":"</bash>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid7-tag-bash", "deepseek-chat", "prompt", false, false, []string{"Bash"})
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if !streamHasToolCallsDelta(frames) {
+		t.Fatalf("expected tool_calls delta for direct bash tag payload, body=%s", rec.Body.String())
+	}
+	if streamHasRawToolJSONContent(frames) {
+		t.Fatalf("raw tool_calls payload leaked in content delta: %s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+}
+
 func TestHandleStreamToolUseLabelMultilineToolCallIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
@@ -1008,7 +1070,7 @@ func TestHandleStreamToolUseLabelMultilineToolCallIntercepted(t *testing.T) {
 	}
 }
 
-func TestHandleStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t *testing.T) {
+func TestHandleStreamToolCallHistoryPayloadWithAlreadyCalledIgnored(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(
 		`data: {"p":"response/content","v":"[TOOL_CALL_HISTORY]\nstatus: already_called\norigin: assistant\nnot_user_input: true\ntool_call_id: call_2be3b3b84d2e45e2b9e300e40af39164\nfunction.name: mcp__exa__web_search_exa\nfunction.arguments: {\"query\":\"马斯克\",\"num_results\":10}\n[/TOOL_CALL_HISTORY]"}`,
@@ -1023,11 +1085,11 @@ func TestHandleStreamToolCallHistoryPayloadInterceptedWithoutDeclaredTools(t *te
 	if !done {
 		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
 	}
-	if !streamHasToolCallsDelta(frames) {
-		t.Fatalf("expected tool_calls delta from TOOL_CALL_HISTORY payload, body=%s", rec.Body.String())
+	if streamHasToolCallsDelta(frames) {
+		t.Fatalf("did not expect tool_calls delta for already_called history payload, body=%s", rec.Body.String())
 	}
-	if streamFinishReason(frames) != "tool_calls" {
-		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	if streamFinishReason(frames) != "stop" {
+		t.Fatalf("expected finish_reason=stop, body=%s", rec.Body.String())
 	}
 }
 
