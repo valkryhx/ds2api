@@ -321,6 +321,28 @@ func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsRejectsAllEmptyParameterPayload(t *testing.T) {
+	text := `<tool_calls><invoke name="Bash"><parameter name="command"></parameter><parameter name="description">   </parameter><parameter name="timeout"></parameter></invoke></tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"Bash"})
+	if !res.SawToolCallSyntax {
+		t.Fatalf("expected tool syntax to be detected, got %#v", res)
+	}
+	if len(res.Calls) != 0 {
+		t.Fatalf("expected all-empty payload to be rejected, got %#v", res.Calls)
+	}
+}
+
+func TestParseToolCallsPreservesExplicitZeroArgToolCall(t *testing.T) {
+	text := `<tool_calls><invoke name="noop"></invoke></tool_calls>`
+	res := ParseToolCallsDetailed(text, []string{"noop"})
+	if len(res.Calls) != 1 {
+		t.Fatalf("expected zero-arg tool call to remain valid, got %#v", res.Calls)
+	}
+	if len(res.Calls[0].Input) != 0 {
+		t.Fatalf("expected empty input map for zero-arg tool call, got %#v", res.Calls[0].Input)
+	}
+}
+
 func TestParseToolCallsSupportsAntmlArgumentStyle(t *testing.T) {
 	text := `<antml:function_calls><antml:function_call id="1" name="Bash"><antml:argument name="command">pwd</antml:argument><antml:argument name="description">x</antml:argument></antml:function_call></antml:function_calls>`
 	calls := ParseToolCalls(text, []string{"bash"})

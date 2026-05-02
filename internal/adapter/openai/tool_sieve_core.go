@@ -393,8 +393,14 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		if insideCodeFenceWithState(state, prefixPart) {
 			return captured, nil, "", true
 		}
+		// Keep buffering while wrapper-level XML/DSML tags are still unmatched.
+		// Without this guard, standalone invoke parsing may fire too early and
+		// emit partial tool calls before </tool_calls> is complete.
+		if hasOpenXMLToolTag(captured) {
+			return "", nil, "", false
+		}
 		if matchedKeyword == "<invoke" {
-			if hasOpenXMLToolTag(captured) || shouldKeepBareInvokeCapture(captured) {
+			if shouldKeepBareInvokeCapture(captured) {
 				return "", nil, "", false
 			}
 			return captured, nil, "", true
@@ -419,7 +425,7 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 		if parsed.SawToolCallSyntax && parsed.RejectedByPolicy {
 			return prefixPart, nil, "", true
 		}
-		if hasOpenXMLToolTag(captured) || shouldKeepBareInvokeCapture(captured) {
+		if shouldKeepBareInvokeCapture(captured) {
 			return "", nil, "", false
 		}
 		if hasOpenDirectToolTag(captured, toolNames) {

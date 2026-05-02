@@ -89,7 +89,7 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 			parsed := parseToolCallsPayload(fencedPayload)
 			if len(parsed) > 0 {
 				calls, rejectedNames := filterToolCallsDetailed(parsed, availableToolNames)
-				if len(calls) == 0 && shouldBypassToolAllowList(availableToolNames) {
+				if len(calls) == 0 && len(rejectedNames) > 0 && shouldBypassToolAllowList(availableToolNames) {
 					calls = normalizeParsedToolCallsNoPolicy(parsed)
 					if len(calls) > 0 {
 						rejectedNames = nil
@@ -162,7 +162,7 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 			// Compatibility fallback: allow parsed standalone tool calls to pass
 			// through when policy filtering rejects them, unless tool_choice=none
 			// sentinel explicitly requests hard blocking.
-			if len(calls) == 0 && shouldBypassToolAllowList(availableToolNames) {
+			if len(calls) == 0 && len(rejectedNames) > 0 && shouldBypassToolAllowList(availableToolNames) {
 				calls = normalizeParsedToolCallsNoPolicy(parsed)
 				if len(calls) > 0 {
 					rejectedNames = nil
@@ -284,9 +284,45 @@ func filterToolCallsDetailed(parsed []ParsedToolCall, availableToolNames []strin
 		if tc.Input == nil {
 			tc.Input = map[string]any{}
 		}
+		// Reject calls whose input object exists but all values are empty.
+		// Keep explicit zero-arg tool calls (empty map) as valid.
+		if len(tc.Input) > 0 && !toolCallInputHasMeaningfulValue(tc.Input) {
+			continue
+		}
 		out = append(out, tc)
 	}
 	return out, rejected
+}
+
+func toolCallInputHasMeaningfulValue(v any) bool {
+	switch x := v.(type) {
+	case nil:
+		return false
+	case string:
+		return strings.TrimSpace(x) != ""
+	case map[string]any:
+		if len(x) == 0 {
+			return false
+		}
+		for _, child := range x {
+			if toolCallInputHasMeaningfulValue(child) {
+				return true
+			}
+		}
+		return false
+	case []any:
+		if len(x) == 0 {
+			return false
+		}
+		for _, child := range x {
+			if toolCallInputHasMeaningfulValue(child) {
+				return true
+			}
+		}
+		return false
+	default:
+		return true
+	}
 }
 
 func resolveAllowedToolName(name string, allowed map[string]struct{}, allowedCanonical map[string]string) string {
