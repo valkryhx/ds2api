@@ -43,15 +43,21 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
+	rawThinking := s.thinkingRaw.String()
 
 	if s.bufferToolContent {
 		detected := []util.ParsedToolCall(nil)
+		textParsed := util.ToolCallParseResult{}
+		thinkingParsed := util.ToolCallParseResult{}
 		if !util.HasMalformedToolCallFragment(finalText) {
-			detected = util.ParseToolCalls(finalText, s.toolNames)
+			textParsed = util.ParseToolCallsDetailed(finalText, s.toolNames)
+			detected = textParsed.Calls
 		}
-		if len(detected) == 0 && finalText == "" && finalThinking != "" && !util.HasMalformedToolCallFragment(finalThinking) {
-			detected = util.ParseToolCalls(finalThinking, s.toolNames)
+		if len(detected) == 0 && finalText == "" && rawThinking != "" && !util.HasMalformedToolCallFragment(rawThinking) {
+			thinkingParsed = util.ParseToolCallsDetailed(rawThinking, s.toolNames)
+			detected = thinkingParsed.Calls
 		}
+		s.logToolCallDebug(stopReason, textParsed, thinkingParsed)
 		if len(detected) > 0 {
 			stopReason = "tool_use"
 			for i, tc := range detected {

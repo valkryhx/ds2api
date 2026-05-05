@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"ds2api/internal/config"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
 	"ds2api/internal/util"
@@ -27,6 +28,7 @@ type claudeStreamRuntime struct {
 	messageID string
 	thinking  strings.Builder
 	text      strings.Builder
+	thinkingRaw strings.Builder
 
 	nextBlockIndex     int
 	thinkingBlockOpen  bool
@@ -89,6 +91,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 			if !s.thinkingEnabled {
 				continue
 			}
+			s.thinkingRaw.WriteString(p.Text)
 			s.thinking.WriteString(p.Text)
 			s.closeTextBlock()
 			if !s.thinkingBlockOpen {
@@ -159,6 +162,20 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	}
 
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func (s *claudeStreamRuntime) logToolCallDebug(reason string, textParsed, thinkingParsed util.ToolCallParseResult) {
+	config.Logger.Info(
+		"[toolcall.debug] claude_stream_parse",
+		"reason", strings.TrimSpace(reason),
+		"tool_names", strings.Join(s.toolNames, ","),
+		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
+		"text_rejected_by_policy", textParsed.RejectedByPolicy,
+		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
+		"thinking_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(thinkingParsed.RejectedToolNames), ","),
+		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
+		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
+	)
 }
 
 func hasUnclosedCodeFence(text string) bool {

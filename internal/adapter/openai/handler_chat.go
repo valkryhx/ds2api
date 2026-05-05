@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"ds2api/internal/auth"
@@ -92,6 +93,19 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 	// emits a valid standalone tool payload, pass it through even when the request's
 	// declared tool list is partial.
 	parseToolNames := toolNames[:0]
+	textParsed := openaifmt.DetectChatToolCalls(finalText, "", parseToolNames)
+	thinkingParsed := openaifmt.DetectChatToolCalls("", finalThinking, parseToolNames)
+	config.Logger.Info(
+		"[toolcall.debug] chat_nonstream_parse",
+		"channel", "text+thinking",
+		"tool_names", strings.Join(parseToolNames, ","),
+		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
+		"text_rejected_by_policy", textParsed.RejectedByPolicy,
+		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
+		"thinking_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(thinkingParsed.RejectedToolNames), ","),
+		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
+		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
+	)
 	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, parseToolNames)
 	writeJSON(w, http.StatusOK, respBody)
 }

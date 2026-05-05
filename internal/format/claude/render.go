@@ -2,16 +2,35 @@ package claude
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"ds2api/internal/util"
 )
 
-func BuildMessageResponse(messageID, model string, normalizedMessages []any, finalThinking, finalText string, toolNames []string) map[string]any {
-	detected := util.ParseToolCalls(finalText, toolNames)
-	if len(detected) == 0 && finalText == "" && finalThinking != "" {
-		detected = util.ParseToolCalls(finalThinking, toolNames)
+func DetectClaudeToolCalls(finalText, finalThinking string, toolNames []string) util.ToolCallParseResult {
+	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
+	if len(textParsed.Calls) > 0 {
+		return textParsed
 	}
+	// Preserve existing behavior: when visible text exists, do not fallback to
+	// thinking for tool-use extraction.
+	if strings.TrimSpace(finalText) != "" {
+		return textParsed
+	}
+	if strings.TrimSpace(finalThinking) == "" {
+		return textParsed
+	}
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, toolNames)
+	if len(thinkingParsed.Calls) > 0 {
+		return thinkingParsed
+	}
+	return textParsed
+}
+
+func BuildMessageResponse(messageID, model string, normalizedMessages []any, finalThinking, finalText string, toolNames []string) map[string]any {
+	detect := DetectClaudeToolCalls(finalText, finalThinking, toolNames)
+	detected := detect.Calls
 	content := make([]map[string]any, 0, 4)
 	if finalThinking != "" {
 		content = append(content, map[string]any{"type": "thinking", "thinking": finalThinking})

@@ -120,6 +120,20 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 	}
 	textParsed := util.ParseStandaloneToolCallsDetailed(result.Text, parseToolNames)
 	logResponsesToolPolicyRejection(traceID, toolChoice, textParsed, "text")
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(result.Thinking, parseToolNames)
+	logResponsesToolPolicyRejection(traceID, toolChoice, thinkingParsed, "thinking")
+	config.Logger.Info(
+		"[toolcall.debug] responses_nonstream_parse",
+		"trace_id", strings.TrimSpace(traceID),
+		"tool_choice_mode", toolChoice.Mode,
+		"tool_names", strings.Join(parseToolNames, ","),
+		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
+		"text_rejected_by_policy", textParsed.RejectedByPolicy,
+		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
+		"thinking_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(thinkingParsed.RejectedToolNames), ","),
+		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
+		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
+	)
 
 	callCount := len(textParsed.Calls)
 	if toolChoice.IsRequired() && callCount == 0 {

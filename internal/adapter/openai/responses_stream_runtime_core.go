@@ -112,6 +112,20 @@ func (s *responsesStreamRuntime) finalize() {
 	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
 	detected := textParsed.Calls
 	s.logToolPolicyRejections(textParsed)
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, parseToolNames)
+	s.logToolPolicyRejections(thinkingParsed)
+	config.Logger.Info(
+		"[toolcall.debug] responses_stream_parse",
+		"trace_id", strings.TrimSpace(s.traceID),
+		"tool_choice_mode", s.toolChoice.Mode,
+		"tool_names", strings.Join(parseToolNames, ","),
+		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
+		"text_rejected_by_policy", textParsed.RejectedByPolicy,
+		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
+		"thinking_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(thinkingParsed.RejectedToolNames), ","),
+		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
+		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
+	)
 
 	if len(detected) > 0 {
 		s.toolCallsEmitted = true

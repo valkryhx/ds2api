@@ -71,6 +71,19 @@ func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	result := sse.CollectStream(resp, stdReq.Thinking, true)
+	textParsed := claudefmt.DetectClaudeToolCalls(result.Text, "", stdReq.ToolNames)
+	thinkingParsed := claudefmt.DetectClaudeToolCalls("", result.Thinking, stdReq.ToolNames)
+	config.Logger.Info(
+		"[toolcall.debug] claude_nonstream_parse",
+		"channel", "text+thinking",
+		"tool_names", strings.Join(stdReq.ToolNames, ","),
+		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
+		"text_rejected_by_policy", textParsed.RejectedByPolicy,
+		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
+		"thinking_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(thinkingParsed.RejectedToolNames), ","),
+		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
+		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
+	)
 	respBody := claudefmt.BuildMessageResponse(
 		fmt.Sprintf("msg_%d", time.Now().UnixNano()),
 		stdReq.ResponseModel,
