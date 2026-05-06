@@ -820,6 +820,26 @@ func TestParseToolCallsKeepsLaterValidDSMLAfterMalformedWrapper(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsKeepsCompleteInvokeWithMalformedDSMLClose(t *testing.T) {
+	text := `<|DSML|tool_calls>
+<|DSML|invoke name="Write">
+<|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\1231.md]]></|DSML|parameter>
+<|DSML|parameter name="content"><![CDATA[# 搜索结果汇总
+
+Hermes Agent 和煎饼。
+]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML>`
+
+	calls := NormalizeToolCallInputsForExecution(ParseToolCalls(text, []string{"Write"}))
+	if len(calls) != 1 {
+		t.Fatalf("expected one complete Write invoke despite malformed wrapper close, got %#v", calls)
+	}
+	if calls[0].Input["file_path"] != `D:\git_codes\ds2api\1231.md` {
+		t.Fatalf("expected file_path to be preserved, got %#v", calls[0].Input)
+	}
+}
+
 func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 	// 测试嵌套对象的修复：DeepSeek 幻觉输出，每个元素内部包含嵌套 {}
 	// 注意：正则只支持单层嵌套，不支持更深层次的嵌套

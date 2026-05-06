@@ -50,11 +50,9 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 		detected := []util.ParsedToolCall(nil)
 		textParsed := util.ToolCallParseResult{}
 		thinkingParsed := util.ToolCallParseResult{}
-		if !util.HasMalformedToolCallFragment(finalText) {
-			textParsed = util.ParseToolCallsDetailed(finalText, s.toolNames)
-			detected = s.prepareToolCallsForExecution(textParsed.Calls)
-		}
-		if len(detected) == 0 && finalText == "" && rawThinking != "" && !util.HasMalformedToolCallFragment(rawThinking) {
+		textParsed = util.ParseToolCallsDetailed(finalText, s.toolNames)
+		detected = s.prepareToolCallsForExecution(textParsed.Calls)
+		if len(detected) == 0 && finalText == "" && rawThinking != "" {
 			thinkingParsed = util.ParseToolCallsDetailed(rawThinking, s.toolNames)
 			detected = s.prepareToolCallsForExecution(thinkingParsed.Calls)
 		}

@@ -561,3 +561,51 @@ func TestHandleClaudeStreamRealtimeExecutesLaterValidWriteAfterMalformedDSMLWrap
 		t.Fatalf("expected claude_tool_use capture for Write, got %#v", capture.Snapshot())
 	}
 }
+
+func TestHandleClaudeStreamRealtimeExecutesCompleteWriteWithMalformedDSMLClose(t *testing.T) {
+	h := &Handler{}
+	text := `<|DSML|tool_calls>
+<|DSML|invoke name="Write">
+<|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\1231.md]]></|DSML|parameter>
+<|DSML|parameter name="content"><![CDATA[# 搜索结果汇总
+
+Hermes Agent 和煎饼。
+]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML>`
+	resp := makeClaudeSSEHTTPResponse(
+		makeDeepSeekContentLine(t, text),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+	toolsRaw := []any{map[string]any{
+		"name": "Write",
+		"input_schema": map[string]any{
+			"type":     "object",
+			"required": []any{"file_path", "content"},
+			"properties": map[string]any{
+				"file_path": map[string]any{"type": "string"},
+				"content":   map[string]any{"type": "string"},
+			},
+		},
+	}}
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "write file"}}, false, false, []string{"Write"}, toolsRaw)
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	var writeInput map[string]any
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Write" {
+			writeInput, _ = contentBlock["input"].(map[string]any)
+			break
+		}
+	}
+	if writeInput == nil {
+		t.Fatalf("expected Write tool_use block for malformed DSML close, body=%s", rec.Body.String())
+	}
+	if writeInput["file_path"] != `D:\git_codes\ds2api\1231.md` {
+		t.Fatalf("expected absolute file_path to be preserved, got %#v", writeInput)
+	}
+}
