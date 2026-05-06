@@ -20,6 +20,7 @@ type responsesStreamRuntime struct {
 	model       string
 	finalPrompt string
 	toolNames   []string
+	toolsRaw    any
 	traceID     string
 	toolChoice  util.ToolChoicePolicy
 
@@ -68,6 +69,7 @@ func newResponsesStreamRuntime(
 	emitEarlyToolDeltas bool,
 	toolChoice util.ToolChoicePolicy,
 	traceID string,
+	toolsRaw any,
 	persistResponse func(obj map[string]any),
 ) *responsesStreamRuntime {
 	return &responsesStreamRuntime{
@@ -80,6 +82,7 @@ func newResponsesStreamRuntime(
 		thinkingEnabled:     thinkingEnabled,
 		searchEnabled:       searchEnabled,
 		toolNames:           toolNames,
+		toolsRaw:            toolsRaw,
 		bufferToolContent:   bufferToolContent,
 		emitEarlyToolDeltas: emitEarlyToolDeltas,
 		streamToolCallIDs:   map[int]string{},

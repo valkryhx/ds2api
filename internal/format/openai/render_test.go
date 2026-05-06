@@ -13,6 +13,7 @@ func TestBuildResponseObjectToolCallsFollowChatShape(t *testing.T) {
 		"",
 		`{"tool_calls":[{"name":"search","input":{"q":"golang"}}]}`,
 		[]string{"search"},
+		nil,
 	)
 
 	outputText, _ := obj["output_text"].(string)
@@ -53,6 +54,7 @@ func TestBuildResponseObjectTreatsMixedProseToolPayloadAsText(t *testing.T) {
 		"",
 		`示例格式：{"tool_calls":[{"name":"search","input":{"q":"golang"}}]}，但这条是普通回答。`,
 		[]string{"search"},
+		nil,
 	)
 
 	outputText, _ := obj["output_text"].(string)
@@ -77,6 +79,7 @@ func TestBuildResponseObjectFencedToolPayloadParsesAsFunctionCall(t *testing.T) 
 		"",
 		"```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"golang\"}}]}\n```",
 		[]string{"search"},
+		nil,
 	)
 
 	outputText, _ := obj["output_text"].(string)
@@ -101,6 +104,7 @@ func TestBuildResponseObjectFencedToolPayloadWithProseRemainsText(t *testing.T) 
 		"",
 		"这是示例，不要执行：\n```json\n{\"tool_calls\":[{\"name\":\"search\",\"input\":{\"q\":\"golang\"}}]}\n```",
 		[]string{"search"},
+		nil,
 	)
 
 	outputText, _ := obj["output_text"].(string)
@@ -124,6 +128,7 @@ func TestBuildResponseObjectReasoningOnlyFallsBackToOutputText(t *testing.T) {
 		"prompt",
 		"internal thinking content",
 		"",
+		nil,
 		nil,
 	)
 
@@ -158,6 +163,7 @@ func TestBuildResponseObjectIgnoresToolCallFromThinkingChannel(t *testing.T) {
 		`{"tool_calls":[{"name":"search","input":{"q":"from-thinking"}}]}`,
 		"",
 		[]string{"search"},
+		nil,
 	)
 
 	output, _ := obj["output"].([]any)
@@ -167,5 +173,41 @@ func TestBuildResponseObjectIgnoresToolCallFromThinkingChannel(t *testing.T) {
 	first, _ := output[0].(map[string]any)
 	if first["type"] != "message" {
 		t.Fatalf("expected output message, got %#v", first["type"])
+	}
+}
+
+func TestBuildResponseObjectNormalizesCodexStringArgumentsBySchema(t *testing.T) {
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	obj := BuildResponseObject(
+		"resp_test",
+		"gpt-4o",
+		"prompt",
+		"",
+		`<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command">["pwd"]</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`,
+		[]string{"functions.shell_command"},
+		toolsRaw,
+	)
+	output, _ := obj["output"].([]any)
+	first, _ := output[0].(map[string]any)
+	argsRaw, _ := first["arguments"].(string)
+	var args map[string]any
+	if err := json.Unmarshal([]byte(argsRaw), &args); err != nil {
+		t.Fatalf("arguments should be valid json string, got=%q err=%v", argsRaw, err)
+	}
+	if args["command"] != `["pwd"]` {
+		t.Fatalf("expected command normalized to json string for codex schema, got %#v", args["command"])
 	}
 }

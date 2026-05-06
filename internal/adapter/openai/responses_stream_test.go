@@ -682,6 +682,55 @@ func TestHandleResponsesStreamCanonicalizesDSMLShellAliasToDeclaredCodexToolName
 	}
 }
 
+func TestHandleResponsesStreamNormalizesCodexStringArgumentsBySchema(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	payload := `<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command">["pwd"]</|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	streamBody := sseLine(payload) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"functions.shell_command"}, util.DefaultToolChoicePolicy(), "", toolsRaw)
+	body := rec.Body.String()
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected function_call done payload, body=%s", body)
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(asString(donePayload["arguments"])), &args); err != nil {
+		t.Fatalf("expected json arguments string, got=%q err=%v", asString(donePayload["arguments"]), err)
+	}
+	if args["command"] != `["pwd"]` {
+		t.Fatalf("expected command normalized to string for codex schema, got %#v", args["command"])
+	}
+}
+
 func TestHandleResponsesNonStreamRequiredToolChoiceViolation(t *testing.T) {
 	h := &Handler{}
 	rec := httptest.NewRecorder()

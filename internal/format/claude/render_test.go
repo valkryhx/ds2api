@@ -1,6 +1,9 @@
 package claude
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestBuildMessageResponseDetectsToolCallsFromThinkingFallback(t *testing.T) {
 	resp := BuildMessageResponse(
@@ -58,5 +61,33 @@ func TestBuildMessageResponseSkipsThinkingFallbackWhenFinalTextExists(t *testing
 	}
 	if foundTool {
 		t.Fatalf("unexpected tool_use block when finalText exists, got=%#v", resp["content"])
+	}
+}
+
+func TestDetectClaudeToolCallsKeepsCompleteDSMLBeforeMalformedTail(t *testing.T) {
+	finalText := strings.Join([]string{
+		`<|DSML|tool_calls>`,
+		`  <|DSML|invoke name="shell">`,
+		`    <|DSML|parameter name="command"><![CDATA[powershell.exe -Command "Set-Content -Path 'D:\git_codes\ds2api\123.md' -Value 'hello'" ]]></|DSML|parameter>`,
+		`  </|DSML|invoke>`,
+		`</|DSML|tool_calls>`,
+		``,
+		`<|DSML|tool_calls>`,
+		`  <|DSML|invoke name="Write">`,
+		`    <|DSML|parameter name="file_path"></|DSML|parameter>`,
+		`    <|DSML|parameter name="content"><![CDATA[hello]]></|DSML|parameter>`,
+		`  </|DSML|invoke>`,
+		`</|DSML>`,
+	}, "\n")
+
+	detected := DetectClaudeToolCalls(finalText, "", []string{"shell", "Write"})
+	if len(detected.Calls) != 1 {
+		t.Fatalf("expected one complete DSML call before malformed tail, got %#v", detected)
+	}
+	if detected.Calls[0].Name != "shell" {
+		t.Fatalf("expected shell tool call, got %#v", detected.Calls[0])
+	}
+	if !strings.Contains(detected.Calls[0].Input["command"].(string), `Set-Content -Path 'D:\git_codes\ds2api\123.md'`) {
+		t.Fatalf("unexpected command payload: %#v", detected.Calls[0].Input)
 	}
 }

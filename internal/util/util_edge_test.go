@@ -346,7 +346,7 @@ func TestConvertClaudeToDeepSeekOpusUsesSlowMapping(t *testing.T) {
 func TestFormatOpenAIStreamToolCalls(t *testing.T) {
 	formatted := FormatOpenAIStreamToolCalls([]ParsedToolCall{
 		{Name: "search", Input: map[string]any{"q": "test"}},
-	})
+	}, nil)
 	if len(formatted) != 1 {
 		t.Fatalf("expected 1, got %d", len(formatted))
 	}

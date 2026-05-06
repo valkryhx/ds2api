@@ -136,3 +136,33 @@ func TestBuildOpenAIFinalPrompt_RequiresExactDeclaredToolName(t *testing.T) {
 		t.Fatalf("expected alias warning for shell_command, got: %q", finalPrompt)
 	}
 }
+
+func TestBuildOpenAIFinalPrompt_IncludesDeclaredStringParameterSchemaForCodexTools(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "run tool"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "functions.shell_command",
+				"description": "run command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+					"required": []any{"command"},
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, `"command":{"type":"string"}`) {
+		t.Fatalf("expected tool schema with command:string in prompt, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "Use the exact tool name from the provided schema.") {
+		t.Fatalf("expected exact schema-name instruction, got: %q", finalPrompt)
+	}
+}

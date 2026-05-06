@@ -58,6 +58,8 @@ func (s *responsesStreamRuntime) closeIncompleteFunctionItems() {
 }
 
 func (s *responsesStreamRuntime) buildCompletedResponseObject(finalThinking, finalText string, calls []util.ParsedToolCall) map[string]any {
+	calls = util.NormalizeToolCallInputsForExecution(calls)
+	calls = util.NormalizeParsedToolCallsForSchemas(calls, s.toolsRaw)
 	type indexedItem struct {
 		index int
 		item  map[string]any

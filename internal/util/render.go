@@ -10,7 +10,7 @@ import (
 
 // BuildOpenAIChatCompletion is kept for backward compatibility.
 // Prefer internal/format/openai.BuildChatCompletion for new code.
-func BuildOpenAIChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildOpenAIChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string, toolsRaw ...any) map[string]any {
 	detected := ParseToolCalls(finalText, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
@@ -19,7 +19,7 @@ func BuildOpenAIChatCompletion(completionID, model, finalPrompt, finalThinking, 
 	}
 	if len(detected) > 0 {
 		finishReason = "tool_calls"
-		messageObj["tool_calls"] = FormatOpenAIToolCalls(detected)
+		messageObj["tool_calls"] = FormatOpenAIToolCalls(detected, firstOptionalValue(toolsRaw))
 		messageObj["content"] = nil
 	}
 	promptTokens := EstimateTokens(finalPrompt)
@@ -45,11 +45,12 @@ func BuildOpenAIChatCompletion(completionID, model, finalPrompt, finalThinking, 
 
 // BuildOpenAIResponseObject is kept for backward compatibility.
 // Prefer internal/format/openai.BuildResponseObject for new code.
-func BuildOpenAIResponseObject(responseID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildOpenAIResponseObject(responseID, model, finalPrompt, finalThinking, finalText string, toolNames []string, toolsRaw ...any) map[string]any {
 	detected := ParseToolCalls(finalText, toolNames)
 	exposedOutputText := finalText
 	output := make([]any, 0, 2)
 	if len(detected) > 0 {
+		detected = NormalizeParsedToolCallsForSchemas(detected, firstOptionalValue(toolsRaw))
 		// Keep structured tool output only; avoid leaking raw tool-call JSON
 		// into response.output_text for clients reading completed responses.
 		exposedOutputText = ""

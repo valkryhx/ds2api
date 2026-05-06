@@ -179,6 +179,36 @@ func TestNormalizeOpenAIResponsesRequestToolChoiceNoneDisablesTools(t *testing.T
 	}
 }
 
+func TestNormalizeOpenAIResponsesRequestPreservesToolsRawForSchemaNormalization(t *testing.T) {
+	store := newEmptyStoreForNormalizeTest(t)
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	req := map[string]any{
+		"model": "gpt-4o",
+		"input": "ping",
+		"tools": tools,
+	}
+	n, err := normalizeOpenAIResponsesRequest(store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if n.ToolsRaw == nil {
+		t.Fatalf("expected ToolsRaw preserved for downstream schema normalization")
+	}
+}
+
 func TestNormalizeOpenAIChatRequestV4ProUsesExpertModelType(t *testing.T) {
 	store := newEmptyStoreForNormalizeTest(t)
 	req := map[string]any{

@@ -7,8 +7,9 @@ import (
 	"github.com/google/uuid"
 )
 
-func FormatOpenAIToolCalls(calls []ParsedToolCall) []map[string]any {
+func FormatOpenAIToolCalls(calls []ParsedToolCall, toolsRaw ...any) []map[string]any {
 	calls = NormalizeToolCallInputsForExecution(calls)
+	calls = NormalizeParsedToolCallsForSchemas(calls, firstOptionalValue(toolsRaw))
 	out := make([]map[string]any, 0, len(calls))
 	for _, c := range calls {
 		args, _ := json.Marshal(c.Input)
@@ -24,8 +25,9 @@ func FormatOpenAIToolCalls(calls []ParsedToolCall) []map[string]any {
 	return out
 }
 
-func FormatOpenAIStreamToolCalls(calls []ParsedToolCall) []map[string]any {
+func FormatOpenAIStreamToolCalls(calls []ParsedToolCall, toolsRaw ...any) []map[string]any {
 	calls = NormalizeToolCallInputsForExecution(calls)
+	calls = NormalizeParsedToolCallsForSchemas(calls, firstOptionalValue(toolsRaw))
 	out := make([]map[string]any, 0, len(calls))
 	for i, c := range calls {
 		args, _ := json.Marshal(c.Input)

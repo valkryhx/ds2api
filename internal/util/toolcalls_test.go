@@ -89,13 +89,37 @@ func TestParseToolCallsDetailedRejectsWhenAllowListEmpty(t *testing.T) {
 }
 
 func TestFormatOpenAIToolCalls(t *testing.T) {
-	formatted := FormatOpenAIToolCalls([]ParsedToolCall{{Name: "search", Input: map[string]any{"q": "x"}}})
+	formatted := FormatOpenAIToolCalls([]ParsedToolCall{{Name: "search", Input: map[string]any{"q": "x"}}}, nil)
 	if len(formatted) != 1 {
 		t.Fatalf("expected 1, got %d", len(formatted))
 	}
 	fn, _ := formatted[0]["function"].(map[string]any)
 	if fn["name"] != "search" {
 		t.Fatalf("unexpected function name: %#v", fn)
+	}
+}
+
+func TestFormatOpenAIToolCallsNormalizesDeclaredStringArgumentsForCodex(t *testing.T) {
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+	formatted := FormatOpenAIToolCalls([]ParsedToolCall{
+		{Name: "functions.shell_command", Input: map[string]any{"command": []any{"pwd"}}},
+	}, toolsRaw)
+	fn, _ := formatted[0]["function"].(map[string]any)
+	if !strings.Contains(asStringValue(fn["arguments"]), `"command":"[\"pwd\"]"`) {
+		t.Fatalf("expected command coerced to json string for codex schema, got %#v", fn["arguments"])
 	}
 }
 
@@ -450,8 +474,8 @@ func TestParseStandaloneToolCallsSupportsFunctionWrapperStyle(t *testing.T) {
 	if len(calls) != 1 {
 		t.Fatalf("expected one parsed call, got %#v", calls)
 	}
-	if calls[0].Name != "shell" {
-		t.Fatalf("expected tool name shell, got %q", calls[0].Name)
+	if calls[0].Name != "shell_command" {
+		t.Fatalf("expected canonical tool name shell_command, got %q", calls[0].Name)
 	}
 	if calls[0].Input["command"] == nil {
 		t.Fatalf("expected command argument, got %#v", calls[0].Input)

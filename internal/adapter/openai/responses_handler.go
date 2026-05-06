@@ -99,13 +99,13 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 
 	responseID := "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if stdReq.Stream {
-		h.handleResponsesStream(w, r, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolChoice, traceID)
+		h.handleResponsesStream(w, r, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
 		return
 	}
-	h.handleResponsesNonStream(w, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolChoice, traceID)
+	h.handleResponsesNonStream(w, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
 }
 
-func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Response, owner, responseID, model, finalPrompt string, thinkingEnabled bool, toolNames []string, toolChoice util.ToolChoicePolicy, traceID string) {
+func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Response, owner, responseID, model, finalPrompt string, thinkingEnabled bool, toolNames []string, toolChoice util.ToolChoicePolicy, traceID string, toolsRaw ...any) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -141,12 +141,12 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		return
 	}
 
-	responseObj := openaifmt.BuildResponseObject(responseID, model, finalPrompt, result.Thinking, result.Text, parseToolNames)
+	responseObj := openaifmt.BuildResponseObject(responseID, model, finalPrompt, result.Thinking, result.Text, parseToolNames, firstOptionalValue(toolsRaw))
 	h.getResponseStore().put(owner, responseID, responseObj)
 	writeJSON(w, http.StatusOK, responseObj)
 }
 
-func (h *Handler) handleResponsesStream(w http.ResponseWriter, r *http.Request, resp *http.Response, owner, responseID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolChoice util.ToolChoicePolicy, traceID string) {
+func (h *Handler) handleResponsesStream(w http.ResponseWriter, r *http.Request, resp *http.Response, owner, responseID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolChoice util.ToolChoicePolicy, traceID string, toolsRaw ...any) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -181,6 +181,7 @@ func (h *Handler) handleResponsesStream(w http.ResponseWriter, r *http.Request, 
 		emitEarlyToolDeltas,
 		toolChoice,
 		traceID,
+		firstOptionalValue(toolsRaw),
 		func(obj map[string]any) {
 			h.getResponseStore().put(owner, responseID, obj)
 		},

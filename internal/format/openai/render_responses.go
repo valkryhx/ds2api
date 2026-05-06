@@ -10,7 +10,7 @@ import (
 	"ds2api/internal/util"
 )
 
-func BuildResponseObject(responseID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildResponseObject(responseID, model, finalPrompt, finalThinking, finalText string, toolNames []string, toolsRaw ...any) map[string]any {
 	// Strict mode: only standalone, structured tool-call payloads are treated
 	// as executable tool calls.
 	detected := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
@@ -18,7 +18,7 @@ func BuildResponseObject(responseID, model, finalPrompt, finalThinking, finalTex
 	output := make([]any, 0, 2)
 	if len(detected.Calls) > 0 {
 		exposedOutputText = ""
-		output = append(output, toResponsesFunctionCallItems(detected.Calls)...)
+		output = append(output, toResponsesFunctionCallItems(detected.Calls, firstOptionalToolArg(toolsRaw))...)
 	} else {
 		content := make([]any, 0, 2)
 		if finalThinking != "" {
@@ -71,10 +71,12 @@ func BuildResponseObjectFromItems(responseID, model, finalPrompt, finalThinking,
 	}
 }
 
-func toResponsesFunctionCallItems(toolCalls []util.ParsedToolCall) []any {
+func toResponsesFunctionCallItems(toolCalls []util.ParsedToolCall, toolsRaw any) []any {
 	if len(toolCalls) == 0 {
 		return nil
 	}
+	toolCalls = util.NormalizeToolCallInputsForExecution(toolCalls)
+	toolCalls = util.NormalizeParsedToolCallsForSchemas(toolCalls, toolsRaw)
 	out := make([]any, 0, len(toolCalls))
 	for _, tc := range toolCalls {
 		if strings.TrimSpace(tc.Name) == "" {
@@ -108,4 +110,11 @@ func normalizeJSONString(raw string) string {
 		return raw
 	}
 	return string(b)
+}
+
+func firstOptionalToolArg(values []any) any {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
 }
