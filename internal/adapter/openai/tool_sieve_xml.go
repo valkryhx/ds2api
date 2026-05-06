@@ -44,9 +44,7 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 		parsed := util.ParseStandaloneToolCallsDetailed(xmlBlock, toolNames)
 		if len(parsed.Calls) > 0 {
 			prefixPart, suffixPart = trimWrappingJSONFence(prefixPart, suffixPart)
-			if best == nil || tag.Start < best.start {
-				best = &candidate{start: tag.Start, prefix: prefixPart, calls: parsed.Calls, suffix: suffixPart}
-			}
+			best = &candidate{start: tag.Start, prefix: prefixPart, calls: parsed.Calls, suffix: suffixPart}
 			break
 		}
 		if parsed.SawToolCallSyntax {

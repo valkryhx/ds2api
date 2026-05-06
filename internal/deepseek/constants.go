@@ -98,6 +98,6 @@ func toStringSet(in []string) map[string]struct{} {
 
 const (
 	KeepAliveTimeout  = 5
-	StreamIdleTimeout = 30
+	StreamIdleTimeout = 300
 	MaxKeepaliveCount = 10
 )
