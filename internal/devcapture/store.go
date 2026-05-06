@@ -19,6 +19,12 @@ const (
 	maxLimit            = 50
 )
 
+type Settings struct {
+	Enabled      *bool
+	Limit        int
+	MaxBodyBytes int
+}
+
 type Entry struct {
 	ID                string `json:"id"`
 	CreatedAt         int64  `json:"created_at"`
@@ -59,30 +65,51 @@ type captureBody struct {
 }
 
 var (
-	globalOnce sync.Once
+	globalMu   sync.Mutex
 	globalInst *Store
 )
 
 func Global() *Store {
-	globalOnce.Do(func() {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+	if globalInst == nil {
 		globalInst = NewFromEnv()
-	})
+	}
 	return globalInst
 }
 
 func NewFromEnv() *Store {
+	return NewFromSettings(Settings{})
+}
+
+func NewFromSettings(settings Settings) *Store {
 	enabled := !isVercelRuntime()
+	if settings.Enabled != nil {
+		enabled = *settings.Enabled
+	}
 	if raw, ok := os.LookupEnv("DS2API_DEV_PACKET_CAPTURE"); ok {
 		enabled = parseBool(raw)
 	}
-	limit := parseIntWithDefault(os.Getenv("DS2API_DEV_PACKET_CAPTURE_LIMIT"), defaultLimit)
+	limit := settings.Limit
+	if limit <= 0 {
+		limit = defaultLimit
+	}
+	if raw := strings.TrimSpace(os.Getenv("DS2API_DEV_PACKET_CAPTURE_LIMIT")); raw != "" {
+		limit = parseIntWithDefault(raw, defaultLimit)
+	}
 	if limit < 1 {
 		limit = defaultLimit
 	}
 	if limit > maxLimit {
 		limit = maxLimit
 	}
-	maxBodyBytes := parseIntWithDefault(os.Getenv("DS2API_DEV_PACKET_CAPTURE_MAX_BODY_BYTES"), defaultMaxBodyBytes)
+	maxBodyBytes := settings.MaxBodyBytes
+	if maxBodyBytes <= 0 {
+		maxBodyBytes = defaultMaxBodyBytes
+	}
+	if raw := strings.TrimSpace(os.Getenv("DS2API_DEV_PACKET_CAPTURE_MAX_BODY_BYTES")); raw != "" {
+		maxBodyBytes = parseIntWithDefault(raw, defaultMaxBodyBytes)
+	}
 	if maxBodyBytes < 1024 {
 		maxBodyBytes = defaultMaxBodyBytes
 	}
@@ -92,6 +119,13 @@ func NewFromEnv() *Store {
 		maxBodyBytes: maxBodyBytes,
 		items:        make([]Entry, 0, limit),
 	}
+}
+
+func Configure(settings Settings) *Store {
+	globalMu.Lock()
+	defer globalMu.Unlock()
+	globalInst = NewFromSettings(settings)
+	return globalInst
 }
 
 func isVercelRuntime() bool {
@@ -152,6 +186,26 @@ func (s *Store) Start(label, url, accountID string, requestPayload any) *Session
 		accountID:  strings.TrimSpace(accountID),
 		requestRaw: marshalPayload(requestPayload),
 	}
+}
+
+func (s *Store) Record(label, url, accountID string, statusCode int, requestPayload any, responsePayload any) {
+	if s == nil || !s.enabled {
+		return
+	}
+	requestBody, _ := truncateString(marshalPayload(requestPayload), s.maxBodyBytes)
+	responseBody, responseTruncated := truncateString(marshalPayload(responsePayload), s.maxBodyBytes)
+	entry := Entry{
+		ID:                "cap_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
+		CreatedAt:         time.Now().Unix(),
+		Label:             strings.TrimSpace(label),
+		URL:               strings.TrimSpace(url),
+		AccountID:         strings.TrimSpace(accountID),
+		StatusCode:        statusCode,
+		RequestBody:       requestBody,
+		ResponseBody:      responseBody,
+		ResponseTruncated: responseTruncated,
+	}
+	s.push(entry)
 }
 
 func (s *Session) WrapBody(rc io.ReadCloser, statusCode int) io.ReadCloser {
@@ -235,6 +289,13 @@ func marshalPayload(v any) string {
 		return fmt.Sprintf("%v", v)
 	}
 	return string(b)
+}
+
+func truncateString(v string, maxLen int) (string, bool) {
+	if maxLen <= 0 || len(v) <= maxLen {
+		return v, false
+	}
+	return v[:maxLen], true
 }
 
 func parseBool(v string) bool {

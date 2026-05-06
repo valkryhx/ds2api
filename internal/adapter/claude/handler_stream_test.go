@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"ds2api/internal/devcapture"
 	"ds2api/internal/sse"
 	"encoding/json"
 	"io"
@@ -26,6 +27,18 @@ func makeClaudeSSEHTTPResponse(lines ...string) *http.Response {
 		Header:     make(http.Header),
 		Body:       io.NopCloser(strings.NewReader(body)),
 	}
+}
+
+func makeDeepSeekContentLine(t *testing.T, text string) string {
+	t.Helper()
+	payload, err := json.Marshal(map[string]any{
+		"p": "response/content",
+		"v": text,
+	})
+	if err != nil {
+		t.Fatalf("marshal content line failed: %v", err)
+	}
+	return "data: " + string(payload)
 }
 
 func parseClaudeFrames(t *testing.T, body string) []claudeFrame {
@@ -452,5 +465,99 @@ func TestHandleClaudeStreamRealtimeSkipsDSMLWithEmptyRequiredSchemaField(t *test
 		if contentBlock["type"] == "tool_use" {
 			t.Fatalf("unexpected tool_use for empty required file_path, body=%s", rec.Body.String())
 		}
+	}
+	for _, f := range findClaudeFrames(frames, "content_block_delta") {
+		delta, _ := f.Payload["delta"].(map[string]any)
+		if delta["type"] == "text_delta" && strings.Contains(asString(delta["text"]), "<|DSML|tool_calls>") {
+			t.Fatalf("unexpected raw DSML leak for empty required file_path, body=%s", rec.Body.String())
+		}
+	}
+}
+
+func TestHandleClaudeStreamRealtimeExecutesLaterValidWriteAfterMalformedDSMLWrapper(t *testing.T) {
+	enabled := true
+	capture := devcapture.Configure(devcapture.Settings{Enabled: &enabled, Limit: 10, MaxBodyBytes: 4096})
+	t.Cleanup(func() {
+		devcapture.Configure(devcapture.Settings{})
+	})
+	h := &Handler{}
+	text := `我需要先理解用户的具体要求。
+<|DSML|tool_calls>
+<|DSML|invoke name="mcp__exa__web_search_exa">
+<|DSML|parameter name="query"><![CDATA[hermes agent]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML|tool_calls|>
+
+<|DSML|tool_calls>
+<|DSML|invoke name="Write">
+<|DSML|parameter name="file_path"><![CDATA[hhh.md]]></|DSML|parameter>
+<|DSML|parameter name="content"><![CDATA[# Hermes Agent
+
+由 Nous Research 开发的自改进型 AI 智能体。
+]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML|tool_calls>`
+	resp := makeClaudeSSEHTTPResponse(
+		makeDeepSeekContentLine(t, text),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+	toolsRaw := []any{
+		map[string]any{
+			"name": "mcp__exa__web_search_exa",
+			"input_schema": map[string]any{
+				"type":     "object",
+				"required": []any{"query"},
+				"properties": map[string]any{
+					"query": map[string]any{"type": "string"},
+				},
+			},
+		},
+		map[string]any{
+			"name": "Write",
+			"input_schema": map[string]any{
+				"type":     "object",
+				"required": []any{"file_path", "content"},
+				"properties": map[string]any{
+					"file_path": map[string]any{"type": "string"},
+					"content":   map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "write file"}}, false, false, []string{"mcp__exa__web_search_exa", "Write"}, toolsRaw)
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	var writeInput map[string]any
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Write" {
+			writeInput, _ = contentBlock["input"].(map[string]any)
+			break
+		}
+	}
+	if writeInput == nil {
+		t.Fatalf("expected Write tool_use block, body=%s", rec.Body.String())
+	}
+	if writeInput["file_path"] != "hhh.md" {
+		t.Fatalf("expected Write file_path hhh.md, got %#v", writeInput)
+	}
+	if content, _ := writeInput["content"].(string); !strings.Contains(content, "Hermes Agent") {
+		t.Fatalf("expected Write content to be preserved, got %#v", writeInput)
+	}
+	foundCapture := false
+	for _, item := range capture.Snapshot() {
+		if item.Label != "claude_tool_use" {
+			continue
+		}
+		if strings.Contains(item.RequestBody, `"name":"Write"`) && strings.Contains(item.RequestBody, `"file_path":"hhh.md"`) {
+			foundCapture = true
+			break
+		}
+	}
+	if !foundCapture {
+		t.Fatalf("expected claude_tool_use capture for Write, got %#v", capture.Snapshot())
 	}
 }

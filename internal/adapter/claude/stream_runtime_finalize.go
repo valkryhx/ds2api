@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"ds2api/internal/devcapture"
 	streamengine "ds2api/internal/stream"
 	"ds2api/internal/util"
 )
@@ -61,6 +62,7 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 		if len(detected) > 0 {
 			stopReason = "tool_use"
 			for i, tc := range detected {
+				recordClaudeStreamToolUse(tc, stopReason, s.toolNames)
 				idx := s.nextBlockIndex + i
 				s.send("content_block_start", map[string]any{
 					"type":  "content_block_start",
@@ -79,6 +81,9 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 			}
 			s.nextBlockIndex += len(detected)
 		} else if finalText != "" {
+			if s.droppedInvalidTool {
+				finalText = "工具调用缺少必填参数，已拒绝执行。请重新发起请求并明确提供完整参数。"
+			}
 			idx := s.nextBlockIndex
 			s.nextBlockIndex++
 			s.send("content_block_start", map[string]any{
@@ -118,10 +123,23 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 	s.send("message_stop", map[string]any{"type": "message_stop"})
 }
 
+func recordClaudeStreamToolUse(tc util.ParsedToolCall, stopReason string, toolNames []string) {
+	devcapture.Global().Record("claude_tool_use", "claude://messages/stream", "", 0, map[string]any{
+		"name":        tc.Name,
+		"input":       tc.Input,
+		"stop_reason": stopReason,
+		"tool_names":  toolNames,
+	}, nil)
+}
+
 func (s *claudeStreamRuntime) prepareToolCallsForExecution(calls []util.ParsedToolCall) []util.ParsedToolCall {
 	calls = util.NormalizeToolCallInputsForExecution(calls)
 	calls = util.NormalizeParsedToolCallsForSchemas(calls, s.toolsRaw)
-	calls = util.FilterParsedToolCallsByRequiredSchemas(calls, s.toolsRaw)
+	var dropped bool
+	calls, dropped = util.FilterParsedToolCallsByRequiredSchemasDetailed(calls, s.toolsRaw)
+	if dropped {
+		s.droppedInvalidTool = true
+	}
 	return calls
 }
 

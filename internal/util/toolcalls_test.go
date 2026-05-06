@@ -786,6 +786,40 @@ func TestParseToolCallsDirectParenShellUnwrapsCompleteCDATA(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsKeepsLaterValidDSMLAfterMalformedWrapper(t *testing.T) {
+	text := `我需要先理解用户的具体要求。
+<|DSML|tool_calls>
+<|DSML|invoke name="mcp__exa__web_search_exa">
+<|DSML|parameter name="query"><![CDATA[hermes agent]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML|tool_calls|>
+
+<|DSML|tool_calls>
+<|DSML|invoke name="Write">
+<|DSML|parameter name="file_path"><![CDATA[hhh.md]]></|DSML|parameter>
+<|DSML|parameter name="content"><![CDATA[# Hermes Agent
+
+由 Nous Research 开发的自改进型 AI 智能体。
+]]></|DSML|parameter>
+</|DSML|invoke>
+</|DSML|tool_calls>`
+
+	calls := ParseToolCalls(text, []string{"mcp__exa__web_search_exa", "Write"})
+	if len(calls) == 0 {
+		t.Fatalf("expected later valid Write DSML to parse, got none")
+	}
+	last := calls[len(calls)-1]
+	if last.Name != "Write" {
+		t.Fatalf("expected later valid Write call, got %#v", calls)
+	}
+	if last.Input["file_path"] != "hhh.md" {
+		t.Fatalf("expected file_path hhh.md, got %#v", last.Input)
+	}
+	if content, _ := last.Input["content"].(string); !strings.Contains(content, "Hermes Agent") {
+		t.Fatalf("expected content to be preserved, got %#v", last.Input)
+	}
+}
+
 func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 	// 测试嵌套对象的修复：DeepSeek 幻觉输出，每个元素内部包含嵌套 {}
 	// 注意：正则只支持单层嵌套，不支持更深层次的嵌套
