@@ -19,15 +19,16 @@ type claudeStreamRuntime struct {
 
 	model     string
 	toolNames []string
+	toolsRaw  any
 	messages  []any
 
 	thinkingEnabled   bool
 	searchEnabled     bool
 	bufferToolContent bool
 
-	messageID string
-	thinking  strings.Builder
-	text      strings.Builder
+	messageID   string
+	thinking    strings.Builder
+	text        strings.Builder
 	thinkingRaw strings.Builder
 
 	nextBlockIndex     int
@@ -48,6 +49,7 @@ func newClaudeStreamRuntime(
 	thinkingEnabled bool,
 	searchEnabled bool,
 	toolNames []string,
+	toolsRaw any,
 ) *claudeStreamRuntime {
 	return &claudeStreamRuntime{
 		w:                  w,
@@ -59,6 +61,7 @@ func newClaudeStreamRuntime(
 		searchEnabled:      searchEnabled,
 		bufferToolContent:  len(toolNames) > 0,
 		toolNames:          toolNames,
+		toolsRaw:           toolsRaw,
 		messageID:          fmt.Sprintf("msg_%d", time.Now().UnixNano()),
 		thinkingBlockIndex: -1,
 		textBlockIndex:     -1,
@@ -126,7 +129,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 			if util.HasMalformedToolCallFragment(s.text.String()) {
 				continue
 			}
-			detected := util.ParseToolCalls(s.text.String(), s.toolNames)
+			detected := s.parseToolCallsForExecution(s.text.String())
 			if len(detected) > 0 {
 				s.finalize("tool_use")
 				return streamengine.ParsedDecision{
@@ -162,6 +165,14 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 	}
 
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func (s *claudeStreamRuntime) parseToolCallsForExecution(text string) []util.ParsedToolCall {
+	detected := util.ParseToolCalls(text, s.toolNames)
+	detected = util.NormalizeToolCallInputsForExecution(detected)
+	detected = util.NormalizeParsedToolCallsForSchemas(detected, s.toolsRaw)
+	detected = util.FilterParsedToolCallsByRequiredSchemas(detected, s.toolsRaw)
+	return detected
 }
 
 func (s *claudeStreamRuntime) logToolCallDebug(reason string, textParsed, thinkingParsed util.ToolCallParseResult) {

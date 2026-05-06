@@ -91,3 +91,35 @@ func TestDetectClaudeToolCallsKeepsCompleteDSMLBeforeMalformedTail(t *testing.T)
 		t.Fatalf("unexpected command payload: %#v", detected.Calls[0].Input)
 	}
 }
+
+func TestBuildMessageResponseDropsToolUseWithEmptyRequiredSchemaField(t *testing.T) {
+	resp := BuildMessageResponse(
+		"msg_1",
+		"claude-sonnet-4-5",
+		[]any{map[string]any{"role": "user", "content": "write file"}},
+		"",
+		`<|DSML|tool_calls><|DSML|invoke name="Write"><|DSML|parameter name="file_path"></|DSML|parameter><|DSML|parameter name="content"><![CDATA[hello]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`,
+		[]string{"Write"},
+		[]any{map[string]any{
+			"name": "Write",
+			"input_schema": map[string]any{
+				"type":     "object",
+				"required": []any{"file_path", "content"},
+				"properties": map[string]any{
+					"file_path": map[string]any{"type": "string"},
+					"content":   map[string]any{"type": "string"},
+				},
+			},
+		}},
+	)
+
+	if resp["stop_reason"] == "tool_use" {
+		t.Fatalf("expected invalid Write call to be dropped, got=%#v", resp)
+	}
+	content, _ := resp["content"].([]map[string]any)
+	for _, block := range content {
+		if block["type"] == "tool_use" {
+			t.Fatalf("unexpected tool_use block for empty required file_path: %#v", resp["content"])
+		}
+	}
+}

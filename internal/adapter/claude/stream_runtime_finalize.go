@@ -51,11 +51,11 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 		thinkingParsed := util.ToolCallParseResult{}
 		if !util.HasMalformedToolCallFragment(finalText) {
 			textParsed = util.ParseToolCallsDetailed(finalText, s.toolNames)
-			detected = textParsed.Calls
+			detected = s.prepareToolCallsForExecution(textParsed.Calls)
 		}
 		if len(detected) == 0 && finalText == "" && rawThinking != "" && !util.HasMalformedToolCallFragment(rawThinking) {
 			thinkingParsed = util.ParseToolCallsDetailed(rawThinking, s.toolNames)
-			detected = thinkingParsed.Calls
+			detected = s.prepareToolCallsForExecution(thinkingParsed.Calls)
 		}
 		s.logToolCallDebug(stopReason, textParsed, thinkingParsed)
 		if len(detected) > 0 {
@@ -116,6 +116,13 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 		},
 	})
 	s.send("message_stop", map[string]any{"type": "message_stop"})
+}
+
+func (s *claudeStreamRuntime) prepareToolCallsForExecution(calls []util.ParsedToolCall) []util.ParsedToolCall {
+	calls = util.NormalizeToolCallInputsForExecution(calls)
+	calls = util.NormalizeParsedToolCallsForSchemas(calls, s.toolsRaw)
+	calls = util.FilterParsedToolCallsByRequiredSchemas(calls, s.toolsRaw)
+	return calls
 }
 
 func (s *claudeStreamRuntime) onFinalize(reason streamengine.StopReason, scannerErr error) {

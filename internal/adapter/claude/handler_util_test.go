@@ -125,11 +125,11 @@ func TestBuildClaudeToolPromptSingleTool(t *testing.T) {
 	if !containsStr(prompt, "Search the web") {
 		t.Fatalf("expected description in prompt")
 	}
-	if !containsStr(prompt, "tool_use") {
-		t.Fatalf("expected tool_use instruction in prompt")
+	if !containsStr(prompt, "<|DSML|tool_calls>") {
+		t.Fatalf("expected DSML tool call instruction in prompt")
 	}
-	if containsStr(prompt, "tool_calls") {
-		t.Fatalf("expected prompt to avoid tool_calls JSON instruction")
+	if !containsStr(prompt, "Fill every required parameter with a non-empty value") {
+		t.Fatalf("expected required-parameter instruction in prompt")
 	}
 }
 

@@ -67,7 +67,7 @@ func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if stdReq.Stream {
-		h.handleClaudeStreamRealtime(w, r, resp, stdReq.ResponseModel, norm.NormalizedMessages, stdReq.Thinking, stdReq.Search, stdReq.ToolNames)
+		h.handleClaudeStreamRealtime(w, r, resp, stdReq.ResponseModel, norm.NormalizedMessages, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw)
 		return
 	}
 	result := sse.CollectStream(resp, stdReq.Thinking, true)
@@ -91,11 +91,12 @@ func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
 		result.Thinking,
 		result.Text,
 		stdReq.ToolNames,
+		stdReq.ToolsRaw,
 	)
 	writeJSON(w, http.StatusOK, respBody)
 }
 
-func (h *Handler) handleClaudeStreamRealtime(w http.ResponseWriter, r *http.Request, resp *http.Response, model string, messages []any, thinkingEnabled, searchEnabled bool, toolNames []string) {
+func (h *Handler) handleClaudeStreamRealtime(w http.ResponseWriter, r *http.Request, resp *http.Response, model string, messages []any, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw any) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -122,6 +123,7 @@ func (h *Handler) handleClaudeStreamRealtime(w http.ResponseWriter, r *http.Requ
 		thinkingEnabled,
 		searchEnabled,
 		toolNames,
+		toolsRaw,
 	)
 	streamRuntime.sendMessageStart()
 

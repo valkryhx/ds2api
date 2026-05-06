@@ -37,6 +37,32 @@ func NormalizeParsedToolCallsForSchemas(calls []ParsedToolCall, toolsRaw any) []
 	return out
 }
 
+func FilterParsedToolCallsByRequiredSchemas(calls []ParsedToolCall, toolsRaw any) []ParsedToolCall {
+	if len(calls) == 0 {
+		return calls
+	}
+	schemas := buildToolSchemaIndex(toolsRaw)
+	if len(schemas) == 0 {
+		return calls
+	}
+
+	out := make([]ParsedToolCall, 0, len(calls))
+	for _, call := range calls {
+		schema, ok := schemas[strings.ToLower(strings.TrimSpace(call.Name))]
+		if !ok {
+			out = append(out, call)
+			continue
+		}
+		if toolValueSatisfiesRequiredSchema(call.Input, schema) {
+			out = append(out, call)
+		}
+	}
+	if len(out) == len(calls) {
+		return calls
+	}
+	return out
+}
+
 func ExtractToolMeta(tool map[string]any) (string, string, any) {
 	name := strings.TrimSpace(asStringValue(tool["name"]))
 	desc := strings.TrimSpace(asStringValue(tool["description"]))
@@ -62,6 +88,72 @@ func ExtractToolMeta(tool map[string]any) (string, string, any) {
 		)
 	}
 	return name, desc, schema
+}
+
+func toolValueSatisfiesRequiredSchema(value any, schema any) bool {
+	schemaMap, ok := schema.(map[string]any)
+	if !ok || len(schemaMap) == 0 {
+		return true
+	}
+	if looksLikeObjectSchema(schemaMap) {
+		obj, ok := value.(map[string]any)
+		if !ok {
+			return len(requiredSchemaKeys(schemaMap["required"])) == 0
+		}
+		for _, key := range requiredSchemaKeys(schemaMap["required"]) {
+			if !toolCallInputHasMeaningfulValue(obj[key]) {
+				return false
+			}
+		}
+		properties, _ := schemaMap["properties"].(map[string]any)
+		for key, propSchema := range properties {
+			if current, exists := obj[key]; exists && !toolValueSatisfiesRequiredSchema(current, propSchema) {
+				return false
+			}
+		}
+		return true
+	}
+	if looksLikeArraySchema(schemaMap) {
+		arr, ok := value.([]any)
+		if !ok {
+			return true
+		}
+		itemsSchema := schemaMap["items"]
+		if itemsSchema == nil {
+			return true
+		}
+		for _, item := range arr {
+			if !toolValueSatisfiesRequiredSchema(item, itemsSchema) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+func requiredSchemaKeys(raw any) []string {
+	switch v := raw.(type) {
+	case []any:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			key := strings.TrimSpace(asStringValue(item))
+			if key != "" {
+				out = append(out, key)
+			}
+		}
+		return out
+	case []string:
+		out := make([]string, 0, len(v))
+		for _, item := range v {
+			key := strings.TrimSpace(item)
+			if key != "" {
+				out = append(out, key)
+			}
+		}
+		return out
+	default:
+		return nil
+	}
 }
 
 func buildToolSchemaIndex(toolsRaw any) map[string]any {

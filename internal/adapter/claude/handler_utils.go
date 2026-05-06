@@ -51,7 +51,24 @@ func buildClaudeToolPrompt(tools []any) string {
 		parts = append(parts, fmt.Sprintf("Tool: %s\nDescription: %s\nParameters: %s", name, desc, schema))
 	}
 	parts = append(parts,
-		"When you need a tool, respond with Claude-native tool use (tool_use) using the provided tool schema. Do not print tool-call JSON in text.",
+		strings.Join([]string{
+			"TOOL CALL FORMAT - FOLLOW EXACTLY:",
+			"",
+			"<|DSML|tool_calls>",
+			`  <|DSML|invoke name="TOOL_NAME_HERE">`,
+			`    <|DSML|parameter name="PARAMETER_NAME"><![CDATA[PARAMETER_VALUE]]></|DSML|parameter>`,
+			"  </|DSML|invoke>",
+			"</|DSML|tool_calls>",
+			"",
+			"RULES:",
+			"1) Use the <|DSML|tool_calls> wrapper format.",
+			"2) Put one or more <|DSML|invoke> entries under a single <|DSML|tool_calls> root.",
+			"3) Use the exact tool name and exact parameter names from the provided schema.",
+			"4) Fill every required parameter with a non-empty value before calling a tool.",
+			"5) All string values should prefer <![CDATA[...]]>, including code/scripts/paths/prompts.",
+			"6) Do not wrap tool markup in markdown fences.",
+			"7) If no tool call is needed, answer normally and do not output tool-call markup.",
+		}, "\n"),
 		"History markers in conversation: [TOOL_CALL_HISTORY]...[/TOOL_CALL_HISTORY] are your previous tool calls; [TOOL_RESULT_HISTORY]...[/TOOL_RESULT_HISTORY] are runtime tool outputs, not user input.",
 		"After a valid [TOOL_RESULT_HISTORY], continue with final answer instead of repeating the same call unless required fields are still missing.",
 	)

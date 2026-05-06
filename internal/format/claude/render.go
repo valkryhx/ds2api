@@ -28,9 +28,11 @@ func DetectClaudeToolCalls(finalText, finalThinking string, toolNames []string) 
 	return textParsed
 }
 
-func BuildMessageResponse(messageID, model string, normalizedMessages []any, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildMessageResponse(messageID, model string, normalizedMessages []any, finalThinking, finalText string, toolNames []string, toolsRaw ...any) map[string]any {
 	detect := DetectClaudeToolCalls(finalText, finalThinking, toolNames)
-	detected := detect.Calls
+	detected := util.NormalizeToolCallInputsForExecution(detect.Calls)
+	detected = util.NormalizeParsedToolCallsForSchemas(detected, firstOptionalToolArg(toolsRaw))
+	detected = util.FilterParsedToolCallsByRequiredSchemas(detected, firstOptionalToolArg(toolsRaw))
 	content := make([]map[string]any, 0, 4)
 	if finalThinking != "" {
 		content = append(content, map[string]any{"type": "thinking", "thinking": finalThinking})
@@ -65,4 +67,11 @@ func BuildMessageResponse(messageID, model string, normalizedMessages []any, fin
 			"output_tokens": util.EstimateTokens(finalThinking) + util.EstimateTokens(finalText),
 		},
 	}
+}
+
+func firstOptionalToolArg(values []any) any {
+	if len(values) == 0 {
+		return nil
+	}
+	return values[0]
 }

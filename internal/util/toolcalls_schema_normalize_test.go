@@ -159,3 +159,53 @@ func TestNormalizeParsedToolCallsForSchemasPreservesArrayWhenSchemaSaysArray(t *
 		t.Fatalf("expected todos array preserved, got %#v want %#v", got[0].Input["todos"], todos)
 	}
 }
+
+func TestFilterParsedToolCallsByRequiredSchemasDropsEmptyRequiredField(t *testing.T) {
+	toolsRaw := []any{
+		map[string]any{
+			"name": "Write",
+			"input_schema": map[string]any{
+				"type":     "object",
+				"required": []any{"file_path", "content"},
+				"properties": map[string]any{
+					"file_path": map[string]any{"type": "string"},
+					"content":   map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+	calls := []ParsedToolCall{{
+		Name:  "Write",
+		Input: map[string]any{"file_path": "", "content": "hello"},
+	}}
+
+	got := FilterParsedToolCallsByRequiredSchemas(calls, toolsRaw)
+	if len(got) != 0 {
+		t.Fatalf("expected empty required file_path to be dropped, got %#v", got)
+	}
+}
+
+func TestFilterParsedToolCallsByRequiredSchemasKeepsValidRequiredFields(t *testing.T) {
+	toolsRaw := []any{
+		map[string]any{
+			"name": "Write",
+			"input_schema": map[string]any{
+				"type":     "object",
+				"required": []string{"file_path", "content"},
+				"properties": map[string]any{
+					"file_path": map[string]any{"type": "string"},
+					"content":   map[string]any{"type": "string"},
+				},
+			},
+		},
+	}
+	calls := []ParsedToolCall{{
+		Name:  "Write",
+		Input: map[string]any{"file_path": "hhh.md", "content": "hello"},
+	}}
+
+	got := FilterParsedToolCallsByRequiredSchemas(calls, toolsRaw)
+	if len(got) != 1 {
+		t.Fatalf("expected valid Write call to be kept, got %#v", got)
+	}
+}
