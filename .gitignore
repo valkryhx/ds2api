@@ -60,3 +60,6 @@ Thumbs.db
 CLAUDE.local.md
 .gocache/
 .gocache_local/
+.tmp/
+internal/adapter/claude/111
+.gitignore

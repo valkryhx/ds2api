@@ -43,6 +43,11 @@
   "embeddings": {
     "provider": "deterministic"
   },
+  "dev_capture": {
+    "enabled": false,
+    "limit": 20,
+    "max_body_bytes": 2097152
+  },
   "claude_model_mapping": {
     "fast": "deepseek-chat",
     "slow": "deepseek-reasoner"
