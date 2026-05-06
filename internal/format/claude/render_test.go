@@ -121,5 +121,13 @@ func TestBuildMessageResponseDropsToolUseWithEmptyRequiredSchemaField(t *testing
 		if block["type"] == "tool_use" {
 			t.Fatalf("unexpected tool_use block for empty required file_path: %#v", resp["content"])
 		}
+		if block["type"] == "text" && strings.Contains(asString(block["text"]), "<|DSML|tool_calls>") {
+			t.Fatalf("unexpected raw DSML leak for empty required file_path: %#v", resp["content"])
+		}
 	}
+}
+
+func asString(v any) string {
+	s, _ := v.(string)
+	return s
 }

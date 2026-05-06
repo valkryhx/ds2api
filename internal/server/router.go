@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ import (
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
 	"ds2api/internal/deepseek"
+	"ds2api/internal/devcapture"
 	"ds2api/internal/webui"
 )
 
@@ -31,6 +33,19 @@ type App struct {
 
 func NewApp() *App {
 	store := config.LoadStore()
+	capture := devcapture.Configure(store.DevCaptureSettings())
+	config.Logger.Info(
+		"[config] runtime config loaded",
+		"pid", os.Getpid(),
+		"cwd", config.BaseDir(),
+		"config_path", config.ConfigPath(),
+		"config_from_env", store.IsEnvBacked(),
+		"keys_count", len(store.Keys()),
+		"accounts_count", len(store.Accounts()),
+		"dev_capture_enabled", capture.Enabled(),
+		"dev_capture_limit", capture.Limit(),
+		"dev_capture_max_body_bytes", capture.MaxBodyBytes(),
+	)
 	pool := account.NewPool(store)
 	var dsClient *deepseek.Client
 	resolver := auth.NewResolver(store, pool, func(ctx context.Context, acc config.Account) (string, error) {

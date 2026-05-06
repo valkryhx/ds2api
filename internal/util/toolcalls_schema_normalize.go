@@ -38,15 +38,21 @@ func NormalizeParsedToolCallsForSchemas(calls []ParsedToolCall, toolsRaw any) []
 }
 
 func FilterParsedToolCallsByRequiredSchemas(calls []ParsedToolCall, toolsRaw any) []ParsedToolCall {
+	filtered, _ := FilterParsedToolCallsByRequiredSchemasDetailed(calls, toolsRaw)
+	return filtered
+}
+
+func FilterParsedToolCallsByRequiredSchemasDetailed(calls []ParsedToolCall, toolsRaw any) ([]ParsedToolCall, bool) {
 	if len(calls) == 0 {
-		return calls
+		return calls, false
 	}
 	schemas := buildToolSchemaIndex(toolsRaw)
 	if len(schemas) == 0 {
-		return calls
+		return calls, false
 	}
 
 	out := make([]ParsedToolCall, 0, len(calls))
+	dropped := false
 	for _, call := range calls {
 		schema, ok := schemas[strings.ToLower(strings.TrimSpace(call.Name))]
 		if !ok {
@@ -55,12 +61,14 @@ func FilterParsedToolCallsByRequiredSchemas(calls []ParsedToolCall, toolsRaw any
 		}
 		if toolValueSatisfiesRequiredSchema(call.Input, schema) {
 			out = append(out, call)
+		} else {
+			dropped = true
 		}
 	}
 	if len(out) == len(calls) {
-		return calls
+		return calls, dropped
 	}
-	return out
+	return out, dropped
 }
 
 func ExtractToolMeta(tool map[string]any) (string, string, any) {

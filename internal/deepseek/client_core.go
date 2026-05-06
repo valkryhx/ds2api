@@ -28,10 +28,14 @@ type Client struct {
 }
 
 func NewClient(store *config.Store, resolver *auth.Resolver) *Client {
+	capture := devcapture.Global()
+	if store != nil {
+		capture = devcapture.Configure(store.DevCaptureSettings())
+	}
 	return &Client{
 		Store:      store,
 		Auth:       resolver,
-		capture:    devcapture.Global(),
+		capture:    capture,
 		regular:    trans.New(60 * time.Second),
 		stream:     trans.New(0),
 		fallback:   &http.Client{Timeout: 60 * time.Second},

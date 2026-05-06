@@ -224,12 +224,18 @@ func TestLowerFunction(t *testing.T) {
 // ─── Config.MarshalJSON / UnmarshalJSON roundtrip ────────────────────
 
 func TestConfigJSONRoundtrip(t *testing.T) {
+	enabled := true
 	cfg := Config{
 		Keys:     []string{"key1", "key2"},
 		Accounts: []Account{{Email: "user@example.com", Password: "pass", Token: "tok"}},
 		ClaudeMapping: map[string]string{
 			"fast": "deepseek-chat",
 			"slow": "deepseek-reasoner",
+		},
+		DevCapture: DevCaptureConfig{
+			Enabled:      &enabled,
+			Limit:        20,
+			MaxBodyBytes: 4096,
 		},
 		VercelSyncHash: "hash123",
 		VercelSyncTime: 1234567890,
@@ -256,6 +262,15 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 	}
 	if decoded.ClaudeMapping["fast"] != "deepseek-chat" {
 		t.Fatalf("unexpected claude mapping: %#v", decoded.ClaudeMapping)
+	}
+	if decoded.DevCapture.Enabled == nil || !*decoded.DevCapture.Enabled {
+		t.Fatalf("unexpected dev capture enabled: %#v", decoded.DevCapture.Enabled)
+	}
+	if decoded.DevCapture.Limit != 20 {
+		t.Fatalf("unexpected dev capture limit: %d", decoded.DevCapture.Limit)
+	}
+	if decoded.DevCapture.MaxBodyBytes != 4096 {
+		t.Fatalf("unexpected dev capture max body bytes: %d", decoded.DevCapture.MaxBodyBytes)
 	}
 	if decoded.VercelSyncHash != "hash123" {
 		t.Fatalf("unexpected vercel sync hash: %q", decoded.VercelSyncHash)
@@ -322,6 +337,25 @@ func TestConfigCloneNilMaps(t *testing.T) {
 	}
 	if cloned.Accounts != nil {
 		t.Fatalf("expected nil accounts in clone, got %#v", cloned.Accounts)
+	}
+}
+
+func TestConfigCloneKeepsDevCapture(t *testing.T) {
+	enabled := true
+	cfg := Config{
+		DevCapture: DevCaptureConfig{
+			Enabled:      &enabled,
+			Limit:        7,
+			MaxBodyBytes: 1024,
+		},
+	}
+	cloned := cfg.Clone()
+	*cfg.DevCapture.Enabled = false
+	if cloned.DevCapture.Enabled == nil || !*cloned.DevCapture.Enabled {
+		t.Fatalf("expected cloned dev capture enabled, got %#v", cloned.DevCapture.Enabled)
+	}
+	if cloned.DevCapture.Limit != 7 || cloned.DevCapture.MaxBodyBytes != 1024 {
+		t.Fatalf("unexpected cloned dev capture: %#v", cloned.DevCapture)
 	}
 }
 

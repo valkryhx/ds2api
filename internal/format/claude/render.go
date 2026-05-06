@@ -32,7 +32,8 @@ func BuildMessageResponse(messageID, model string, normalizedMessages []any, fin
 	detect := DetectClaudeToolCalls(finalText, finalThinking, toolNames)
 	detected := util.NormalizeToolCallInputsForExecution(detect.Calls)
 	detected = util.NormalizeParsedToolCallsForSchemas(detected, firstOptionalToolArg(toolsRaw))
-	detected = util.FilterParsedToolCallsByRequiredSchemas(detected, firstOptionalToolArg(toolsRaw))
+	var droppedByRequired bool
+	detected, droppedByRequired = util.FilterParsedToolCallsByRequiredSchemasDetailed(detected, firstOptionalToolArg(toolsRaw))
 	content := make([]map[string]any, 0, 4)
 	if finalThinking != "" {
 		content = append(content, map[string]any{"type": "thinking", "thinking": finalThinking})
@@ -49,7 +50,9 @@ func BuildMessageResponse(messageID, model string, normalizedMessages []any, fin
 			})
 		}
 	} else {
-		if finalText == "" {
+		if droppedByRequired && detect.SawToolCallSyntax {
+			finalText = "工具调用缺少必填参数，已拒绝执行。请重新发起请求并明确提供完整参数。"
+		} else if finalText == "" {
 			finalText = "抱歉，没有生成有效的响应内容。"
 		}
 		content = append(content, map[string]any{"type": "text", "text": finalText})

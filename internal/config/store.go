@@ -22,10 +22,10 @@ type Store struct {
 func LoadStore() *Store {
 	cfg, fromEnv, err := loadConfig()
 	if err != nil {
-		Logger.Warn("[config] load failed", "error", err)
+		Logger.Warn("[config] load failed", "error", err, "cwd", BaseDir(), "config_path", ConfigPath(), "from_env", fromEnv)
 	}
 	if len(cfg.Keys) == 0 && len(cfg.Accounts) == 0 {
-		Logger.Warn("[config] empty config loaded")
+		Logger.Warn("[config] empty config loaded", "cwd", BaseDir(), "config_path", ConfigPath(), "from_env", fromEnv)
 	}
 	s := &Store{cfg: cfg, path: ConfigPath(), fromEnv: fromEnv}
 	s.rebuildIndexes()

@@ -38,6 +38,7 @@ type claudeStreamRuntime struct {
 	textBlockIndex     int
 	ended              bool
 	upstreamErr        string
+	droppedInvalidTool bool
 }
 
 func newClaudeStreamRuntime(
@@ -169,10 +170,7 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 
 func (s *claudeStreamRuntime) parseToolCallsForExecution(text string) []util.ParsedToolCall {
 	detected := util.ParseToolCalls(text, s.toolNames)
-	detected = util.NormalizeToolCallInputsForExecution(detected)
-	detected = util.NormalizeParsedToolCallsForSchemas(detected, s.toolsRaw)
-	detected = util.FilterParsedToolCallsByRequiredSchemas(detected, s.toolsRaw)
-	return detected
+	return s.prepareToolCallsForExecution(detected)
 }
 
 func (s *claudeStreamRuntime) logToolCallDebug(reason string, textParsed, thinkingParsed util.ToolCallParseResult) {

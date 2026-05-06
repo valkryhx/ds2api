@@ -47,6 +47,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if strings.TrimSpace(c.Embeddings.Provider) != "" {
 		m["embeddings"] = c.Embeddings
 	}
+	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 {
+		m["dev_capture"] = c.DevCapture
+	}
 	if c.VercelSyncHash != "" {
 		m["_vercel_sync_hash"] = c.VercelSyncHash
 	}
@@ -108,6 +111,10 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 			if err := json.Unmarshal(v, &c.Embeddings); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
 			}
+		case "dev_capture":
+			if err := json.Unmarshal(v, &c.DevCapture); err != nil {
+				return fmt.Errorf("invalid field %q: %w", k, err)
+			}
 		case "_vercel_sync_hash":
 			if err := json.Unmarshal(v, &c.VercelSyncHash); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
@@ -138,9 +145,14 @@ func (c Config) Clone() Config {
 		Compat: CompatConfig{
 			WideInputStrictOutput: cloneBoolPtr(c.Compat.WideInputStrictOutput),
 		},
-		Toolcall:         c.Toolcall,
-		Responses:        c.Responses,
-		Embeddings:       c.Embeddings,
+		Toolcall:   c.Toolcall,
+		Responses:  c.Responses,
+		Embeddings: c.Embeddings,
+		DevCapture: DevCaptureConfig{
+			Enabled:      cloneBoolPtr(c.DevCapture.Enabled),
+			Limit:        c.DevCapture.Limit,
+			MaxBodyBytes: c.DevCapture.MaxBodyBytes,
+		},
 		VercelSyncHash:   c.VercelSyncHash,
 		VercelSyncTime:   c.VercelSyncTime,
 		AdditionalFields: map[string]any{},

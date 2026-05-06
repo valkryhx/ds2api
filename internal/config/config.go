@@ -12,6 +12,7 @@ type Config struct {
 	Toolcall         ToolcallConfig    `json:"toolcall,omitempty"`
 	Responses        ResponsesConfig   `json:"responses,omitempty"`
 	Embeddings       EmbeddingsConfig  `json:"embeddings,omitempty"`
+	DevCapture       DevCaptureConfig  `json:"dev_capture,omitempty"`
 	VercelSyncHash   string            `json:"_vercel_sync_hash,omitempty"`
 	VercelSyncTime   int64             `json:"_vercel_sync_time,omitempty"`
 	AdditionalFields map[string]any    `json:"-"`
@@ -52,4 +53,10 @@ type ResponsesConfig struct {
 
 type EmbeddingsConfig struct {
 	Provider string `json:"provider,omitempty"`
+}
+
+type DevCaptureConfig struct {
+	Enabled      *bool `json:"enabled,omitempty"`
+	Limit        int   `json:"limit,omitempty"`
+	MaxBodyBytes int   `json:"max_body_bytes,omitempty"`
 }

@@ -4,6 +4,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"ds2api/internal/devcapture"
 )
 
 func (s *Store) ClaudeMapping() map[string]string {
@@ -75,6 +77,16 @@ func (s *Store) EmbeddingsProvider() string {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return strings.TrimSpace(s.cfg.Embeddings.Provider)
+}
+
+func (s *Store) DevCaptureSettings() devcapture.Settings {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return devcapture.Settings{
+		Enabled:      s.cfg.DevCapture.Enabled,
+		Limit:        s.cfg.DevCapture.Limit,
+		MaxBodyBytes: s.cfg.DevCapture.MaxBodyBytes,
+	}
 }
 
 func (s *Store) AdminPasswordHash() string {

@@ -10,6 +10,7 @@ import (
 
 	"ds2api/internal/auth"
 	"ds2api/internal/config"
+	"ds2api/internal/devcapture"
 	claudefmt "ds2api/internal/format/claude"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
@@ -36,6 +37,7 @@ func (h *Handler) Messages(w http.ResponseWriter, r *http.Request) {
 		writeClaudeError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	recordClaudeInboundRequest(r, a, req)
 	norm, err := normalizeClaudeRequest(h.Store, req)
 	if err != nil {
 		writeClaudeError(w, http.StatusBadRequest, err.Error())
@@ -146,4 +148,27 @@ func (h *Handler) handleClaudeStreamRealtime(w http.ResponseWriter, r *http.Requ
 		OnParsed:   streamRuntime.onParsed,
 		OnFinalize: streamRuntime.onFinalize,
 	})
+}
+
+func recordClaudeInboundRequest(r *http.Request, a *auth.RequestAuth, req map[string]any) {
+	if r == nil || req == nil {
+		return
+	}
+	accountID := ""
+	if a != nil {
+		accountID = a.AccountID
+		if accountID == "" {
+			accountID = a.CallerID
+		}
+	}
+	devcapture.Global().Record("claude_inbound", r.URL.String(), accountID, 0, map[string]any{
+		"model":          req["model"],
+		"stream":         req["stream"],
+		"system":         req["system"],
+		"messages":       req["messages"],
+		"tools":          req["tools"],
+		"tool_choice":    req["tool_choice"],
+		"max_tokens":     req["max_tokens"],
+		"anthropic_beta": req["anthropic_beta"],
+	}, nil)
 }
