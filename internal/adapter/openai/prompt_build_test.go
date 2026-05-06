@@ -110,3 +110,29 @@ func TestBuildOpenAIFinalPrompt_UsesDSMLToolcallInstruction(t *testing.T) {
 		t.Fatalf("did not expect XML/DSML ban after migration, got: %q", finalPrompt)
 	}
 }
+
+func TestBuildOpenAIFinalPrompt_RequiresExactDeclaredToolName(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "run tool"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "shell_command",
+				"description": "run command",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, "Use the exact tool name from the provided schema.") {
+		t.Fatalf("expected exact tool-name guidance, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "if the tool name is shell_command, do not output shell") {
+		t.Fatalf("expected alias warning for shell_command, got: %q", finalPrompt)
+	}
+}

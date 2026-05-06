@@ -1,0 +1,13 @@
+{
+  "calls": [
+    {
+      "name": "functions.shell_command",
+      "input": {
+        "command": "pwd"
+      }
+    }
+  ],
+  "sawToolCallSyntax": true,
+  "rejectedByPolicy": false,
+  "rejectedToolNames": []
+}

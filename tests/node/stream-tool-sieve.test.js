@@ -351,3 +351,11 @@ test('parseStandaloneToolCalls ignores empty nested tool_calls tags', () => {
   const calls = parseStandaloneToolCalls(payload, ['mcp__exa__web_search_exa']);
   assert.equal(calls.length, 0);
 });
+
+test('parseStandaloneToolCalls canonicalizes DSML shell alias to namespaced declared tool', () => {
+  const payload = '<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>';
+  const calls = parseStandaloneToolCalls(payload, ['functions.shell_command']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'functions.shell_command');
+  assert.equal(calls[0].input.command, 'pwd');
+});

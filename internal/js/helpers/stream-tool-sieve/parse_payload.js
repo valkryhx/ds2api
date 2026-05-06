@@ -22,6 +22,8 @@ const TOOL_CALL_MARKUP_ARGS_PATTERNS = [
 ];
 const TEXT_KV_NAME_PATTERN = /function\.name:\s*([a-zA-Z0-9_.-]+)/gi;
 const CALL_MARKER_PATTERN = /\[\s*(?:调用|call)\s+([a-zA-Z0-9_.-]+)\s*\]/gi;
+const DSML_TOOL_TAG_PATTERN = /<(\/?)\|DSML\|(?:\s*\|)*\s*(tool_calls|invoke|parameter)((?:[^<>]|\r|\n)*?)>/gi;
+const STANDALONE_CDATA_PATTERN = /^<!\[CDATA\[([\s\S]*?)\]\]>$/i;
 
 const {
   toStringSafe,
@@ -125,7 +127,7 @@ function parseToolCallsPayload(payload) {
 }
 
 function parseMarkupToolCalls(text) {
-  const raw = toStringSafe(text).trim();
+  const raw = normalizeDSMLToolCallMarkup(toStringSafe(text)).trim();
   if (!raw) {
     return [];
   }
@@ -455,9 +457,14 @@ function parseToolCallInput(v) {
     return {};
   }
   if (typeof v === 'string') {
-    const raw = toStringSafe(v);
+    let raw = toStringSafe(v);
     if (!raw) {
       return {};
+    }
+    const cdataMatch = raw.match(STANDALONE_CDATA_PATTERN);
+    if (cdataMatch) {
+      raw = toStringSafe(cdataMatch[1]);
+      return raw ? { _raw: raw } : {};
     }
     try {
       const parsed = JSON.parse(raw);
@@ -481,6 +488,17 @@ function parseToolCallInput(v) {
     return {};
   }
   return {};
+}
+
+function normalizeDSMLToolCallMarkup(text) {
+  const raw = toStringSafe(text);
+  if (!raw || !raw.includes('<|DSML|')) {
+    return raw;
+  }
+  return raw.replace(DSML_TOOL_TAG_PATTERN, (_m, closing, tagName, rest) => {
+    const suffix = typeof rest === 'string' ? rest : '';
+    return `<${closing ? '/' : ''}${tagName}${suffix.endsWith('>') ? suffix : `${suffix}>`}`;
+  });
 }
 
 module.exports = {

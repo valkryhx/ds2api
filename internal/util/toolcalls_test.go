@@ -405,6 +405,34 @@ I notice parser issues:
 	}
 }
 
+func TestParseStandaloneToolCallsCanonicalizesDSMLShellAliasToDeclaredShellCommand(t *testing.T) {
+	text := `<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	calls := ParseStandaloneToolCalls(text, []string{"shell_command"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "shell_command" {
+		t.Fatalf("expected canonical tool name shell_command, got %#v", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
+func TestParseStandaloneToolCallsCanonicalizesDSMLShellAliasToNamespacedDeclaredTool(t *testing.T) {
+	text := `<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	calls := ParseStandaloneToolCalls(text, []string{"functions.shell_command"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 call, got %#v", calls)
+	}
+	if calls[0].Name != "functions.shell_command" {
+		t.Fatalf("expected canonical tool name functions.shell_command, got %#v", calls[0].Name)
+	}
+	if calls[0].Input["command"] != "pwd" {
+		t.Fatalf("unexpected command: %#v", calls[0].Input["command"])
+	}
+}
+
 func TestParseToolCallsSupportsMultipleInvokeFunctionCalls(t *testing.T) {
 	text := `<function_calls><invoke name="Bash"><parameter name="command">pwd</parameter></invoke><invoke name="Read"><parameter name="path">README.MD</parameter></invoke></function_calls>`
 	calls := ParseToolCalls(text, []string{"bash", "read"})
@@ -436,8 +464,8 @@ func TestParseStandaloneToolCallsBypassesAllowListWhenNotToolChoiceNone(t *testi
 	if len(calls) != 1 {
 		t.Fatalf("expected parsed call to bypass allow-list mismatch, got %#v", calls)
 	}
-	if calls[0].Name != "shell" {
-		t.Fatalf("expected original name shell, got %#v", calls[0].Name)
+	if calls[0].Name != "shell_command" {
+		t.Fatalf("expected canonical tool name shell_command, got %#v", calls[0].Name)
 	}
 }
 

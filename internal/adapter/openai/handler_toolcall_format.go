@@ -66,6 +66,8 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy util.ToolCh
 		"1) Use the <|DSML|tool_calls> wrapper format.",
 		"2) Put one or more <|DSML|invoke> entries under a single <|DSML|tool_calls> root.",
 		"3) Put the tool name in invoke name attribute: <|DSML|invoke name=\"TOOL_NAME\">.",
+		"3a) Use the exact tool name from the provided schema.",
+		"3b) Example: if the tool name is shell_command, do not output shell.",
 		"4) All string values should prefer <![CDATA[...]]>, including code/scripts/paths/prompts.",
 		"5) Every top-level argument should be a <|DSML|parameter name=\"ARG_NAME\">...</|DSML|parameter> node.",
 		"6) Objects use nested XML elements inside the parameter body. Arrays may repeat <item> children.",

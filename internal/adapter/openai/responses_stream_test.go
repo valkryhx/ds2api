@@ -651,6 +651,37 @@ func TestHandleResponsesStreamAllowsUnknownToolName(t *testing.T) {
 	}
 }
 
+func TestHandleResponsesStreamCanonicalizesDSMLShellAliasToDeclaredCodexToolName(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	payload := `<|DSML|tool_calls><|DSML|invoke name="shell"><|DSML|parameter name="command"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	streamBody := sseLine(payload) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"functions.shell_command"}, util.DefaultToolChoicePolicy(), "")
+	body := rec.Body.String()
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected function_call done payload, body=%s", body)
+	}
+	if got := strings.TrimSpace(asString(donePayload["name"])); got != "functions.shell_command" {
+		t.Fatalf("expected canonical Codex tool name functions.shell_command, got %q body=%s", got, body)
+	}
+}
+
 func TestHandleResponsesNonStreamRequiredToolChoiceViolation(t *testing.T) {
 	h := &Handler{}
 	rec := httptest.NewRecorder()

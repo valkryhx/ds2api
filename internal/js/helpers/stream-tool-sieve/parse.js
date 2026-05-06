@@ -17,6 +17,20 @@ const {
 
 const TOOL_NAME_LOOSE_PATTERN = /[^a-z0-9]+/g;
 const EXAMPLE_PREFIX_PATTERN = /(示例|example|例如|比如|for example|请勿执行|不要执行|仅示例|仅供参考|do not execute|don't execute)/i;
+const SHELL_LIKE_TOOL_ALIASES = [
+  'bash',
+  'shell',
+  'shell_command',
+  'execute_command',
+  'powershell',
+  'cmd',
+  'terminal',
+];
+const READ_LIKE_TOOL_ALIASES = [
+  'read',
+  'read_file',
+  'cat',
+];
 
 function extractToolNames(tools) {
   if (!Array.isArray(tools) || tools.length === 0) {
@@ -220,12 +234,56 @@ function resolveAllowedToolName(name, allowed, allowedCanonical) {
   if (!loose) {
     return '';
   }
+  const familyCanonical = resolveAllowedToolAliasFamily(lower, allowedCanonical);
+  if (familyCanonical) {
+    return familyCanonical;
+  }
   for (const [candidateLower, canonical] of allowedCanonical.entries()) {
     if (candidateLower.replace(TOOL_NAME_LOOSE_PATTERN, '') === loose) {
       return canonical;
     }
   }
   return '';
+}
+
+function resolveAllowedToolAliasFamily(name, allowedCanonical) {
+  const normalized = collapseToolNameNamespace(toStringSafe(name).trim().toLowerCase());
+  if (!normalized) {
+    return '';
+  }
+  const shellCanonical = resolveAliasFamily(normalized, SHELL_LIKE_TOOL_ALIASES, allowedCanonical);
+  if (shellCanonical) {
+    return shellCanonical;
+  }
+  return resolveAliasFamily(normalized, READ_LIKE_TOOL_ALIASES, allowedCanonical);
+}
+
+function resolveAliasFamily(name, family, allowedCanonical) {
+  if (!aliasFamilyContains(name, family)) {
+    return '';
+  }
+  for (const [candidateLower, canonical] of allowedCanonical.entries()) {
+    if (aliasFamilyContains(collapseToolNameNamespace(candidateLower), family)) {
+      return canonical;
+    }
+  }
+  return '';
+}
+
+function aliasFamilyContains(name, family) {
+  return family.includes(toStringSafe(name).trim().toLowerCase());
+}
+
+function collapseToolNameNamespace(name) {
+  const normalized = toStringSafe(name).trim().toLowerCase();
+  if (!normalized) {
+    return '';
+  }
+  const idx = normalized.lastIndexOf('.');
+  if (idx >= 0 && idx < normalized.length - 1) {
+    return normalized.slice(idx + 1);
+  }
+  return normalized;
 }
 
 function looksLikeToolCallSyntax(text) {
