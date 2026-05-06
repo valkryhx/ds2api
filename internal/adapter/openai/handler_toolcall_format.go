@@ -182,8 +182,10 @@ func filterIncrementalToolCallDeltasByAllowed(deltas []toolCallDelta, allowedNam
 	return out
 }
 
-func formatFinalStreamToolCallsWithStableIDs(calls []util.ParsedToolCall, ids map[int]string) []map[string]any {
+func formatFinalStreamToolCallsWithStableIDs(calls []util.ParsedToolCall, declaredToolNames []string, ids map[int]string, toolsRaw any) []map[string]any {
+	calls = util.CanonicalizeParsedToolCallNames(calls, declaredToolNames)
 	calls = util.NormalizeToolCallInputsForExecution(calls)
+	calls = util.NormalizeParsedToolCallsForSchemas(calls, toolsRaw)
 	if len(calls) == 0 {
 		return nil
 	}

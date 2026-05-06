@@ -7,7 +7,7 @@ import (
 	"ds2api/internal/util"
 )
 
-func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string) map[string]any {
+func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText string, toolNames []string, toolsRaw ...any) map[string]any {
 	detected := DetectChatToolCalls(finalText, finalThinking, toolNames)
 	finishReason := "stop"
 	messageObj := map[string]any{"role": "assistant", "content": finalText}
@@ -16,7 +16,7 @@ func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalT
 	}
 	if len(detected.Calls) > 0 {
 		finishReason = "tool_calls"
-		messageObj["tool_calls"] = util.FormatOpenAIToolCalls(detected.Calls)
+		messageObj["tool_calls"] = util.FormatOpenAIToolCalls(detected.Calls, firstOptionalToolArg(toolsRaw))
 		messageObj["content"] = nil
 	}
 
@@ -31,14 +31,17 @@ func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalT
 }
 
 func DetectChatToolCalls(finalText, finalThinking string, toolNames []string) util.ToolCallParseResult {
-	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
+	parseToolNames := toolNames[:0]
+	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
+	textParsed.Calls = util.CanonicalizeParsedToolCallNames(textParsed.Calls, toolNames)
 	if len(textParsed.Calls) > 0 {
 		return textParsed
 	}
 	if strings.TrimSpace(finalThinking) == "" {
 		return textParsed
 	}
-	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, toolNames)
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, parseToolNames)
+	thinkingParsed.Calls = util.CanonicalizeParsedToolCallNames(thinkingParsed.Calls, toolNames)
 	if len(thinkingParsed.Calls) > 0 {
 		return thinkingParsed
 	}

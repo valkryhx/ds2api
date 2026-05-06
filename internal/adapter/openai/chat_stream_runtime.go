@@ -20,6 +20,7 @@ type chatStreamRuntime struct {
 	model        string
 	finalPrompt  string
 	toolNames    []string
+	toolsRaw     any
 
 	thinkingEnabled bool
 	searchEnabled   bool
@@ -50,6 +51,7 @@ func newChatStreamRuntime(
 	toolNames []string,
 	bufferToolContent bool,
 	emitEarlyToolDeltas bool,
+	toolsRaw any,
 ) *chatStreamRuntime {
 	return &chatStreamRuntime{
 		w:                   w,
@@ -60,6 +62,7 @@ func newChatStreamRuntime(
 		model:               model,
 		finalPrompt:         finalPrompt,
 		toolNames:           toolNames,
+		toolsRaw:            toolsRaw,
 		thinkingEnabled:     thinkingEnabled,
 		searchEnabled:       searchEnabled,
 		bufferToolContent:   bufferToolContent,
@@ -101,7 +104,7 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 	if len(detected.Calls) > 0 && !s.toolCallsDoneEmitted {
 		finishReason = "tool_calls"
 		delta := map[string]any{
-			"tool_calls": formatFinalStreamToolCallsWithStableIDs(detected.Calls, s.streamToolCallIDs),
+			"tool_calls": formatFinalStreamToolCallsWithStableIDs(detected.Calls, s.toolNames, s.streamToolCallIDs, s.toolsRaw),
 		}
 		if !s.firstChunkSent {
 			delta["role"] = "assistant"
@@ -117,13 +120,13 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 		s.toolCallsEmitted = true
 		s.toolCallsDoneEmitted = true
 	} else if s.bufferToolContent {
-		for _, evt := range flushToolSieve(&s.toolSieve, s.toolNames) {
+		for _, evt := range flushToolSieve(&s.toolSieve, s.permissiveParseToolNames()) {
 			if len(evt.ToolCalls) > 0 {
 				finishReason = "tool_calls"
 				s.toolCallsEmitted = true
 				s.toolCallsDoneEmitted = true
 				tcDelta := map[string]any{
-					"tool_calls": formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs),
+					"tool_calls": formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.toolNames, s.streamToolCallIDs, s.toolsRaw),
 				}
 				if !s.firstChunkSent {
 					tcDelta["role"] = "assistant"
@@ -206,7 +209,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 			if !s.bufferToolContent {
 				delta["content"] = p.Text
 			} else {
-				events := processToolSieveChunk(&s.toolSieve, p.Text, s.toolNames)
+				events := processToolSieveChunk(&s.toolSieve, p.Text, s.permissiveParseToolNames())
 				for _, evt := range events {
 					if len(evt.ToolCallDeltas) > 0 {
 						if !s.emitEarlyToolDeltas {
@@ -235,7 +238,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 						s.toolCallsEmitted = true
 						s.toolCallsDoneEmitted = true
 						tcDelta := map[string]any{
-							"tool_calls": formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.streamToolCallIDs),
+							"tool_calls": formatFinalStreamToolCallsWithStableIDs(evt.ToolCalls, s.toolNames, s.streamToolCallIDs, s.toolsRaw),
 						}
 						if !s.firstChunkSent {
 							tcDelta["role"] = "assistant"
@@ -266,4 +269,8 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 		s.sendChunk(openaifmt.BuildChatStreamChunk(s.completionID, s.created, s.model, newChoices, nil))
 	}
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}
+}
+
+func (s *chatStreamRuntime) permissiveParseToolNames() []string {
+	return s.toolNames[:0]
 }

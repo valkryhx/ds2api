@@ -229,6 +229,98 @@ func TestHandleNonStreamToolCallFromThinkingPayloadIntercepted(t *testing.T) {
 	}
 }
 
+func TestHandleNonStreamCanonicalizesCodexToolNameToDeclaredFunctionsNamespace(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"<|DSML|tool_calls><|DSML|invoke name=\"shell\"><|DSML|parameter name=\"command\"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	h.handleNonStream(rec, context.Background(), resp, "cid-codex-shell", "deepseek-reasoner", "prompt", true, []string{"functions.shell_command"}, toolsRaw)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	out := decodeJSONBody(t, rec.Body.String())
+	choices, _ := out["choices"].([]any)
+	choice, _ := choices[0].(map[string]any)
+	if choice["finish_reason"] != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, got %#v", choice["finish_reason"])
+	}
+	msg, _ := choice["message"].(map[string]any)
+	toolCalls, _ := msg["tool_calls"].([]any)
+	if len(toolCalls) != 1 {
+		t.Fatalf("expected 1 tool call, got %#v", msg["tool_calls"])
+	}
+	call0, _ := toolCalls[0].(map[string]any)
+	fn, _ := call0["function"].(map[string]any)
+	if asString(fn["name"]) != "functions.shell_command" {
+		t.Fatalf("expected canonical tool name functions.shell_command, got %#v", fn["name"])
+	}
+}
+
+func TestHandleStreamCanonicalizesCodexToolNameToDeclaredFunctionsNamespace(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`data: {"p":"response/content","v":"<|DSML|tool_calls><|DSML|invoke name=\"shell\"><|DSML|parameter name=\"command\"><![CDATA[pwd]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}`,
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "functions.shell_command",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"command": map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	h.handleStream(rec, req, resp, "cid3-codex-shell", "deepseek-chat", "prompt", false, false, []string{"functions.shell_command"}, toolsRaw)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "tool_calls" {
+		t.Fatalf("expected finish_reason=tool_calls, body=%s", rec.Body.String())
+	}
+	names := streamToolCallNames(frames)
+	found := false
+	for _, name := range names {
+		if name == "functions.shell_command" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected canonical streamed tool name functions.shell_command, got %#v body=%s", names, rec.Body.String())
+	}
+}
+
 func TestHandleNonStreamUnknownToolIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

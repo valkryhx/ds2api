@@ -71,13 +71,13 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames)
+		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw)
 		return
 	}
-	h.handleNonStream(w, r.Context(), resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames)
+	h.handleNonStream(w, r.Context(), resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolsRaw)
 }
 
-func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled bool, toolNames []string) {
+func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled bool, toolNames []string, toolsRaw ...any) {
 	if resp.StatusCode != http.StatusOK {
 		defer resp.Body.Close()
 		body, _ := io.ReadAll(resp.Body)
@@ -89,16 +89,12 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 
 	finalThinking := result.Thinking
 	finalText := result.Text
-	// Chat/completions tool parsing should remain permissive: if the upstream model
-	// emits a valid standalone tool payload, pass it through even when the request's
-	// declared tool list is partial.
-	parseToolNames := toolNames[:0]
-	textParsed := openaifmt.DetectChatToolCalls(finalText, "", parseToolNames)
-	thinkingParsed := openaifmt.DetectChatToolCalls("", finalThinking, parseToolNames)
+	textParsed := openaifmt.DetectChatToolCalls(finalText, "", toolNames)
+	thinkingParsed := openaifmt.DetectChatToolCalls("", finalThinking, toolNames)
 	config.Logger.Info(
 		"[toolcall.debug] chat_nonstream_parse",
 		"channel", "text+thinking",
-		"tool_names", strings.Join(parseToolNames, ","),
+		"tool_names", strings.Join(toolNames, ","),
 		"text_rejected_tool_names", strings.Join(filteredRejectedToolNamesForLog(textParsed.RejectedToolNames), ","),
 		"text_rejected_by_policy", textParsed.RejectedByPolicy,
 		"text_saw_tool_syntax", textParsed.SawToolCallSyntax,
@@ -106,11 +102,11 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
 		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
 	)
-	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, parseToolNames)
+	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames, firstOptionalValue(toolsRaw))
 	writeJSON(w, http.StatusOK, respBody)
 }
 
-func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string) {
+func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw ...any) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -134,10 +130,6 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 	if thinkingEnabled {
 		initialType = "thinking"
 	}
-	// Keep chat/completions tool interception permissive (do not hard-filter by
-	// declared tools in the request payload).
-	parseToolNames := toolNames[:0]
-
 	streamRuntime := newChatStreamRuntime(
 		w,
 		rc,
@@ -148,9 +140,10 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		finalPrompt,
 		thinkingEnabled,
 		searchEnabled,
-		parseToolNames,
+		toolNames,
 		bufferToolContent,
 		emitEarlyToolDeltas,
+		firstOptionalValue(toolsRaw),
 	)
 
 	streamengine.ConsumeSSE(streamengine.ConsumeConfig{

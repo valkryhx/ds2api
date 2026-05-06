@@ -88,3 +88,43 @@ func aliasFamilyContains(name string, family []string) bool {
 	}
 	return false
 }
+
+func CanonicalizeParsedToolCallNames(calls []ParsedToolCall, declaredNames []string) []ParsedToolCall {
+	if len(calls) == 0 || len(declaredNames) == 0 {
+		return calls
+	}
+	allowed := map[string]struct{}{}
+	allowedCanonical := map[string]string{}
+	for _, name := range declaredNames {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		allowed[trimmed] = struct{}{}
+		lower := strings.ToLower(trimmed)
+		if _, exists := allowedCanonical[lower]; !exists {
+			allowedCanonical[lower] = trimmed
+		}
+	}
+	if len(allowed) == 0 {
+		return calls
+	}
+	out := make([]ParsedToolCall, 0, len(calls))
+	changed := false
+	for _, tc := range calls {
+		name := strings.TrimSpace(tc.Name)
+		if name == "" {
+			out = append(out, tc)
+			continue
+		}
+		if matched := resolveAllowedToolName(name, allowed, allowedCanonical); matched != "" && matched != tc.Name {
+			tc.Name = matched
+			changed = true
+		}
+		out = append(out, tc)
+	}
+	if !changed {
+		return calls
+	}
+	return out
+}
