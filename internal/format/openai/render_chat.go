@@ -31,7 +31,7 @@ func BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalT
 }
 
 func DetectChatToolCalls(finalText, finalThinking string, toolNames []string) util.ToolCallParseResult {
-	parseToolNames := toolNames[:0]
+	parseToolNames := util.PermissiveToolParseNames(toolNames)
 	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
 	textParsed.Calls = util.CanonicalizeParsedToolCallNames(textParsed.Calls, toolNames)
 	if len(textParsed.Calls) > 0 {

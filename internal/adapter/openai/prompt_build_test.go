@@ -166,3 +166,37 @@ func TestBuildOpenAIFinalPrompt_IncludesDeclaredStringParameterSchemaForCodexToo
 		t.Fatalf("expected exact schema-name instruction, got: %q", finalPrompt)
 	}
 }
+
+func TestBuildOpenAIFinalPrompt_RequiresCompleteDSMLClosersAndNonEmptyRequiredParams(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "write file to D:\\git_codes\\ds2api\\s1.md"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "Write",
+				"description": "write file",
+				"parameters": map[string]any{
+					"type": "object",
+					"properties": map[string]any{
+						"file_path": map[string]any{"type": "string"},
+						"content":   map[string]any{"type": "string"},
+					},
+					"required": []any{"file_path", "content"},
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, "You MUST output the complete closing tags </|DSML|invoke> and </|DSML|tool_calls>.") {
+		t.Fatalf("expected complete-closing-tag instruction, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "Never emit a partial or truncated closing tag such as </|DSML|.") {
+		t.Fatalf("expected partial-closing-tag prohibition, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, "Fill every required parameter with a non-empty value before calling a tool.") {
+		t.Fatalf("expected non-empty required-parameter instruction, got: %q", finalPrompt)
+	}
+}

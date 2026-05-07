@@ -56,7 +56,9 @@ type EmbeddingsConfig struct {
 }
 
 type DevCaptureConfig struct {
-	Enabled      *bool `json:"enabled,omitempty"`
-	Limit        int   `json:"limit,omitempty"`
-	MaxBodyBytes int   `json:"max_body_bytes,omitempty"`
+	Enabled       *bool  `json:"enabled,omitempty"`
+	Limit         int    `json:"limit,omitempty"`
+	MaxBodyBytes  int    `json:"max_body_bytes,omitempty"`
+	PersistToDisk *bool  `json:"persist_to_disk,omitempty"`
+	OutputDir     string `json:"output_dir,omitempty"`
 }

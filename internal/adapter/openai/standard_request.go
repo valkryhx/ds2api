@@ -24,8 +24,15 @@ func normalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 	if responseModel == "" {
 		responseModel = resolvedModel
 	}
-	toolPolicy := util.DefaultToolChoicePolicy()
+	toolPolicy, err := parseToolChoicePolicy(req["tool_choice"], req["tools"])
+	if err != nil {
+		return util.StandardRequest{}, err
+	}
 	finalPrompt, toolNames := buildOpenAIFinalPromptWithPolicy(messagesRaw, req["tools"], traceID, toolPolicy)
+	if toolPolicy.IsNone() {
+		toolNames = util.ToolChoiceNoneBlockParseNames()
+		toolPolicy.Allowed = nil
+	}
 	passThrough := collectOpenAIChatPassThrough(req)
 
 	return util.StandardRequest{

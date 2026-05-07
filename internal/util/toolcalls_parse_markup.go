@@ -412,6 +412,15 @@ func parseInvokeParameterValue(paramName, raw string) any {
 		}
 		return value
 	}
+	if value, ok := recoverDanglingCDATAValue(trimmed); ok {
+		if parsed, ok := parseJSONLiteralValue(value); ok {
+			return parsed
+		}
+		if parsed, ok := parseStructuredCDATAParameterValue(paramName, value); ok {
+			return parsed
+		}
+		return value
+	}
 	decoded := html.UnescapeString(extractRawTagValue(trimmed))
 	if strings.Contains(decoded, "<") && strings.Contains(decoded, ">") {
 		if parsedValue, ok := parseXMLFragmentValue(decoded); ok {

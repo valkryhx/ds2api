@@ -14,6 +14,7 @@ import (
 	openaifmt "ds2api/internal/format/openai"
 	"ds2api/internal/sse"
 	streamengine "ds2api/internal/stream"
+	"ds2api/internal/util"
 )
 
 func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
@@ -44,6 +45,7 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	recordOpenAIInbound(r, a, req)
 	stdReq, err := normalizeOpenAIChatRequest(h.Store, req, requestTraceID(r))
 	if err != nil {
 		writeOpenAIError(w, http.StatusBadRequest, err.Error())
@@ -102,6 +104,18 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
 		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
 	)
+	recordOpenAIToolUse("openai_tool_use", "openai://chat/completions/nonstream", textParsed.Calls, map[string]any{
+		"endpoint":      "/v1/chat/completions",
+		"channel":       "text",
+		"thinking_used": thinkingEnabled,
+		"model":         model,
+	})
+	recordOpenAIToolUse("openai_tool_use", "openai://chat/completions/nonstream", thinkingParsed.Calls, map[string]any{
+		"endpoint":      "/v1/chat/completions",
+		"channel":       "thinking",
+		"thinking_used": thinkingEnabled,
+		"model":         model,
+	})
 	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames, firstOptionalValue(toolsRaw))
 	writeJSON(w, http.StatusOK, respBody)
 }
@@ -125,6 +139,12 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 
 	created := time.Now().Unix()
 	bufferToolContent := h.toolcallFeatureMatchEnabled()
+	for _, name := range toolNames {
+		if util.IsToolChoiceNoneBlockName(name) {
+			bufferToolContent = false
+			break
+		}
+	}
 	emitEarlyToolDeltas := h.toolcallEarlyEmitHighConfidence()
 	initialType := "text"
 	if thinkingEnabled {

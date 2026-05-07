@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -16,13 +17,16 @@ import (
 const (
 	defaultLimit        = 5
 	defaultMaxBodyBytes = 2 * 1024 * 1024
+	defaultOutputDir    = "logs/dev_captures"
 	maxLimit            = 50
 )
 
 type Settings struct {
-	Enabled      *bool
-	Limit        int
-	MaxBodyBytes int
+	Enabled       *bool
+	Limit         int
+	MaxBodyBytes  int
+	PersistToDisk *bool
+	OutputDir     string
 }
 
 type Entry struct {
@@ -38,11 +42,13 @@ type Entry struct {
 }
 
 type Store struct {
-	mu           sync.Mutex
-	enabled      bool
-	limit        int
-	maxBodyBytes int
-	items        []Entry
+	mu            sync.Mutex
+	enabled       bool
+	limit         int
+	maxBodyBytes  int
+	persistToDisk bool
+	outputDir     string
+	items         []Entry
 }
 
 type Session struct {
@@ -113,11 +119,27 @@ func NewFromSettings(settings Settings) *Store {
 	if maxBodyBytes < 1024 {
 		maxBodyBytes = defaultMaxBodyBytes
 	}
+	persistToDisk := false
+	if settings.PersistToDisk != nil {
+		persistToDisk = *settings.PersistToDisk
+	}
+	if raw, ok := os.LookupEnv("DS2API_DEV_PACKET_CAPTURE_PERSIST_TO_DISK"); ok {
+		persistToDisk = parseBool(raw)
+	}
+	outputDir := strings.TrimSpace(settings.OutputDir)
+	if outputDir == "" {
+		outputDir = defaultOutputDir
+	}
+	if raw := strings.TrimSpace(os.Getenv("DS2API_DEV_PACKET_CAPTURE_OUTPUT_DIR")); raw != "" {
+		outputDir = raw
+	}
 	return &Store{
-		enabled:      enabled,
-		limit:        limit,
-		maxBodyBytes: maxBodyBytes,
-		items:        make([]Entry, 0, limit),
+		enabled:       enabled,
+		limit:         limit,
+		maxBodyBytes:  maxBodyBytes,
+		persistToDisk: persistToDisk,
+		outputDir:     outputDir,
+		items:         make([]Entry, 0, limit),
 	}
 }
 
@@ -151,6 +173,20 @@ func (s *Store) MaxBodyBytes() int {
 		return defaultMaxBodyBytes
 	}
 	return s.maxBodyBytes
+}
+
+func (s *Store) PersistToDisk() bool {
+	if s == nil {
+		return false
+	}
+	return s.persistToDisk
+}
+
+func (s *Store) OutputDir() string {
+	if s == nil {
+		return defaultOutputDir
+	}
+	return s.outputDir
 }
 
 func (s *Store) Snapshot() []Entry {
@@ -281,6 +317,56 @@ func (s *Store) push(entry Entry) {
 	if len(s.items) > s.limit {
 		s.items = s.items[:s.limit]
 	}
+	s.persistLocked(entry)
+}
+
+func (s *Store) persistLocked(entry Entry) {
+	if !s.persistToDisk {
+		return
+	}
+	label := sanitizeLabel(entry.Label)
+	if label == "" {
+		label = "captures"
+	}
+	dir := strings.TrimSpace(s.outputDir)
+	if dir == "" {
+		dir = defaultOutputDir
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	path := filepath.Join(dir, label+".jsonl")
+	b, err := json.Marshal(entry)
+	if err != nil {
+		return
+	}
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	if err != nil {
+		return
+	}
+	defer f.Close()
+	_, _ = f.Write(append(b, '\n'))
+}
+
+func sanitizeLabel(label string) string {
+	label = strings.TrimSpace(strings.ToLower(label))
+	if label == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, r := range label {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+		case r == '_' || r == '-':
+			b.WriteRune(r)
+		default:
+			b.WriteByte('_')
+		}
+	}
+	return strings.Trim(b.String(), "_")
 }
 
 func marshalPayload(v any) string {

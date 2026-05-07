@@ -100,7 +100,7 @@ func (s *chatStreamRuntime) sendDone() {
 func (s *chatStreamRuntime) finalize(finishReason string) {
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
-	detected := openaifmt.DetectChatToolCalls(finalText, finalThinking, s.toolNames)
+	detected := openaifmt.DetectChatToolCalls(finalText, finalThinking, s.permissiveParseToolNames())
 	if len(detected.Calls) > 0 && !s.toolCallsDoneEmitted {
 		finishReason = "tool_calls"
 		delta := map[string]any{
@@ -163,6 +163,12 @@ func (s *chatStreamRuntime) finalize(finishReason string) {
 	if len(detected.Calls) > 0 || s.toolCallsEmitted {
 		finishReason = "tool_calls"
 	}
+	recordOpenAIToolUse("openai_tool_use", "openai://chat/completions/stream", detected.Calls, map[string]any{
+		"endpoint":         "/v1/chat/completions",
+		"finish_reason":    finishReason,
+		"thinking_enabled": s.thinkingEnabled,
+		"model":            s.model,
+	})
 	s.sendChunk(openaifmt.BuildChatStreamChunk(
 		s.completionID,
 		s.created,
@@ -215,7 +221,7 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 						if !s.emitEarlyToolDeltas {
 							continue
 						}
-						filtered := filterIncrementalToolCallDeltasByAllowed(evt.ToolCallDeltas, s.toolNames, s.streamToolNames)
+						filtered := filterIncrementalToolCallDeltasByAllowed(evt.ToolCallDeltas, s.permissiveParseToolNames(), s.streamToolNames)
 						if len(filtered) == 0 {
 							continue
 						}
@@ -272,5 +278,5 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 }
 
 func (s *chatStreamRuntime) permissiveParseToolNames() []string {
-	return s.toolNames[:0]
+	return streamPermissiveToolNames(s.toolNames)
 }

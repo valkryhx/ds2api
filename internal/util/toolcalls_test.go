@@ -840,6 +840,112 @@ Hermes Agent 和煎饼。
 	}
 }
 
+func TestParseToolCallsKeepsCompleteInvokeWithMissingLeadingLessThanOnDSMLWrapper(t *testing.T) {
+	text := `我来把翻译结果写到 1114.md。
+|DSML|tool_calls>
+  <|DSML|invoke name="Write">
+    <|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\1114.md]]></|DSML|parameter>
+    <|DSML|parameter name="content"><![CDATA[# 标题
+
+正文内容]]></|DSML|parameter>
+  </|DSML|invoke>
+</|DSML|tool_calls>`
+
+	calls := NormalizeToolCallInputsForExecution(ParseToolCalls(text, []string{"Write"}))
+	if len(calls) != 1 {
+		t.Fatalf("expected one complete Write invoke despite missing leading less-than on wrapper, got %#v", calls)
+	}
+	if calls[0].Input["file_path"] != `D:\git_codes\ds2api\1114.md` {
+		t.Fatalf("expected file_path to be preserved, got %#v", calls[0].Input)
+	}
+	if calls[0].Input["content"] != "# 标题\n\n正文内容" {
+		t.Fatalf("expected content to be preserved, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsAllowsDSMLWriteWithFencedMarkdownInsideContent(t *testing.T) {
+	text := `<|DSML|tool_calls>
+  <|DSML|invoke name="Write">
+    <|DSML|parameter name="file_path"><![CDATA[d:\git_codes\ds2api\EEE1.md]]></|DSML|parameter>
+    <|DSML|parameter name="content"><![CDATA[# DeepSeek pro-think Model Tool Call Format Analysis and Enhancement Design
+
+## 1. Problem Statement
+
+The model references ` + "```thinking" + ` and ` + "```json" + ` examples.
+
+### Example
+
+` + "```go" + `
+func stripThinkingBlocks(s string) string {
+    return s
+}
+` + "```" + `
+]]></|DSML|parameter>
+  </|DSML|invoke>
+</|DSML|tool_calls>`
+
+	calls := NormalizeToolCallInputsForExecution(ParseStandaloneToolCalls(text, []string{"Write"}))
+	if len(calls) != 1 {
+		t.Fatalf("expected one DSML Write call despite fenced markdown inside content, got %#v", calls)
+	}
+	if calls[0].Name != "Write" {
+		t.Fatalf("expected Write, got %#v", calls)
+	}
+	if calls[0].Input["file_path"] != `d:\git_codes\ds2api\EEE1.md` {
+		t.Fatalf("expected file_path preserved, got %#v", calls[0].Input)
+	}
+	content, _ := calls[0].Input["content"].(string)
+	if !strings.Contains(content, "stripThinkingBlocks") || !strings.Contains(content, "```go") {
+		t.Fatalf("expected fenced markdown preserved inside content, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsRecoversDSMLBashWithMissingCDATACloser(t *testing.T) {
+	text := `<|DSML|tool_calls>
+  <|DSML|invoke name="Bash">
+    <|DSML|parameter name="command"><![CDATA[powershell -Command "Get-PSDrive D | Select-Object Used,Free | Format-List"</|DSML|parameter>
+    <|DSML|parameter name="description"><![CDATA[Check D: drive free space]]</|DSML|parameter>
+  </|DSML|invoke>
+</|DSML|tool_calls>`
+
+	calls := NormalizeToolCallInputsForExecution(ParseStandaloneToolCalls(text, []string{"Bash"}))
+	if len(calls) != 1 {
+		t.Fatalf("expected one Bash call despite missing CDATA closer, got %#v", calls)
+	}
+	if calls[0].Name != "Bash" {
+		t.Fatalf("expected Bash, got %#v", calls)
+	}
+	if calls[0].Input["command"] != `powershell -Command "Get-PSDrive D | Select-Object Used,Free | Format-List"` {
+		t.Fatalf("expected command recovered, got %#v", calls[0].Input)
+	}
+	if calls[0].Input["description"] != "Check D: drive free space" {
+		t.Fatalf("expected description recovered, got %#v", calls[0].Input)
+	}
+}
+
+func TestFindToolMarkupTagOutsideIgnoredSupportsMissingLeadingLessThanDSMLWrapper(t *testing.T) {
+	text := `|DSML|tool_calls>
+  <|DSML|invoke name="Write"></|DSML|invoke>
+</|DSML|tool_calls>`
+
+	tag, ok := FindToolMarkupTagOutsideIgnored(text, 0)
+	if !ok {
+		t.Fatal("expected missing-leading-less-than DSML wrapper to be detected")
+	}
+	if tag.Start != 0 || tag.Name != "tool_calls" || tag.Closing || !tag.DSMLLike {
+		t.Fatalf("unexpected tag: %#v", tag)
+	}
+}
+
+func TestIsPartialToolMarkupTagPrefixSupportsMissingLeadingLessThanDSML(t *testing.T) {
+	if !IsPartialToolMarkupTagPrefix(`|DSML|tool_c`) {
+		t.Fatal("expected missing-leading-less-than DSML partial wrapper to be detected")
+	}
+	if !IsPartialToolMarkupTagPrefix(`/|DSML|inv`) {
+		t.Fatal("expected missing-leading-less-than DSML partial closing tag to be detected")
+	}
+}
+
 func TestRepairLooseJSONWithNestedObjects(t *testing.T) {
 	// 测试嵌套对象的修复：DeepSeek 幻觉输出，每个元素内部包含嵌套 {}
 	// 注意：正则只支持单层嵌套，不支持更深层次的嵌套

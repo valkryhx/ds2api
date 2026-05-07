@@ -459,8 +459,10 @@ func consumeToolCapture(state *toolStreamSieveState, toolNames []string) (prefix
 
 var toolSieveKeywords = []string{
 	"<|dsml|tool_calls",
+	"|dsml|tool_calls",
 	"<tool_calls",
 	"<invoke",
+	"|dsml|invoke",
 	"<tool_call",
 	"<function_call",
 	"<bash",

@@ -123,13 +123,22 @@ func FindMatchingToolMarkupClose(text string, open ToolMarkupTag) (ToolMarkupTag
 }
 
 func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
-	if start < 0 || start >= len(text) || text[start] != '<' {
+	if start < 0 || start >= len(text) {
 		return ToolMarkupTag{}, false
 	}
 	lower := strings.ToLower(text)
-	i := start + 1
-	for i < len(text) && text[i] == '<' {
+	i := start
+	syntheticLessThan := false
+	if text[start] == '<' {
 		i++
+		for i < len(text) && text[i] == '<' {
+			i++
+		}
+	} else {
+		if !isMissingLeadingLessThanDSMLTagStart(text, start) {
+			return ToolMarkupTag{}, false
+		}
+		syntheticLessThan = true
 	}
 	closing := false
 	if i < len(text) && text[i] == '/' {
@@ -137,6 +146,9 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 		i++
 	}
 	i, dsmlLike := consumeToolMarkupNamePrefix(lower, text, i)
+	if syntheticLessThan && !dsmlLike {
+		return ToolMarkupTag{}, false
+	}
 	name, nameLen := matchToolMarkupName(lower, i)
 	if nameLen == 0 {
 		return ToolMarkupTag{}, false
@@ -177,13 +189,18 @@ func scanToolMarkupTagAt(text string, start int) (ToolMarkupTag, bool) {
 }
 
 func IsPartialToolMarkupTagPrefix(text string) bool {
-	if text == "" || text[0] != '<' || strings.Contains(text, ">") {
+	if text == "" || strings.Contains(text, ">") {
 		return false
 	}
 	lower := strings.ToLower(text)
-	i := 1
-	for i < len(text) && text[i] == '<' {
-		i++
+	i := 0
+	if text[0] == '<' {
+		i = 1
+		for i < len(text) && text[i] == '<' {
+			i++
+		}
+	} else if !isMissingLeadingLessThanDSMLTagStart(text, 0) {
+		return false
 	}
 	if i >= len(text) {
 		return true
@@ -266,6 +283,45 @@ func consumeToolMarkupPipe(text string, idx int) (int, bool) {
 	return idx, false
 }
 
+func isMissingLeadingLessThanDSMLTagStart(text string, start int) bool {
+	if start < 0 || start >= len(text) || !hasLooseToolMarkupBoundaryBefore(text, start) {
+		return false
+	}
+	switch text[start] {
+	case '|':
+		return true
+	case '/':
+		if start+1 < len(text) && text[start+1] == '|' {
+			return true
+		}
+		if strings.HasPrefix(text[start+1:], "｜") {
+			return true
+		}
+		return false
+	default:
+		if strings.HasPrefix(text[start:], "｜") {
+			return true
+		}
+		return false
+	}
+}
+
+func hasLooseToolMarkupBoundaryBefore(text string, start int) bool {
+	if start <= 0 {
+		return true
+	}
+	prev := text[start-1]
+	if prev >= 0x80 {
+		return true
+	}
+	switch prev {
+	case ' ', '\t', '\n', '\r', '.', ',', ';', ':', '!', '?', '(', ')', '[', ']', '{', '}', '\'', '"', '`', '>':
+		return true
+	default:
+		return false
+	}
+}
+
 func hasToolMarkupBoundary(text string, idx int) bool {
 	if idx >= len(text) {
 		return true
@@ -283,6 +339,9 @@ func skipXMLIgnoredSection(lower string, i int) (next int, advanced bool, blocke
 	case strings.HasPrefix(lower[i:], "<![cdata["):
 		end := strings.Index(lower[i+len("<![cdata["):], "]]>")
 		if end < 0 {
+			if recoveredEnd, ok := findImplicitCDATARecoveryEnd(lower, i+len("<![cdata[")); ok {
+				return recoveredEnd, true, false
+			}
 			return 0, false, true
 		}
 		return i + len("<![cdata[") + end + len("]]>"), true, false
@@ -295,6 +354,31 @@ func skipXMLIgnoredSection(lower string, i int) (next int, advanced bool, blocke
 	default:
 		return i, false, false
 	}
+}
+
+func findImplicitCDATARecoveryEnd(lower string, from int) (int, bool) {
+	if from < 0 || from >= len(lower) {
+		return 0, false
+	}
+	candidates := []string{
+		"</|dsml|parameter>",
+		"</parameter>",
+		"</|dsml|argument>",
+		"</argument>",
+	}
+	best := -1
+	for _, marker := range candidates {
+		if idx := strings.Index(lower[from:], marker); idx >= 0 {
+			abs := from + idx
+			if best < 0 || abs < best {
+				best = abs
+			}
+		}
+	}
+	if best < 0 {
+		return 0, false
+	}
+	return best, true
 }
 
 func findXMLTagEnd(text string, from int) int {
@@ -324,4 +408,3 @@ func maxInt(a, b int) int {
 	}
 	return b
 }
-

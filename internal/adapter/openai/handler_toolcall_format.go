@@ -75,7 +75,9 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy util.ToolCh
 		"8) Do NOT wrap XML in markdown fences. Do NOT output explanations/role markers/internal monologue.",
 		"9) If you call a tool, first non-whitespace chars of that block must be <|DSML|tool_calls>.",
 		"10) Never omit the opening <|DSML|tool_calls> tag.",
-		"11) Compatibility: runtime also accepts legacy <tool_calls>/<invoke>/<parameter> tags.",
+		"11) You MUST output the complete closing tags </|DSML|invoke> and </|DSML|tool_calls>.",
+		"12) Never emit a partial or truncated closing tag such as </|DSML|.",
+		"13) Fill every required parameter with a non-empty value before calling a tool.",
 	}
 	toolPrompt := strings.Join([]string{
 		"You have access to these tools:",
@@ -147,6 +149,10 @@ func formatIncrementalStreamToolCallDeltas(deltas []toolCallDelta, ids map[int]s
 		out = append(out, item)
 	}
 	return out
+}
+
+func streamPermissiveToolNames(toolNames []string) []string {
+	return util.PermissiveToolParseNames(toolNames)
 }
 
 func filterIncrementalToolCallDeltasByAllowed(deltas []toolCallDelta, allowedNames []string, seenNames map[int]string) []toolCallDelta {

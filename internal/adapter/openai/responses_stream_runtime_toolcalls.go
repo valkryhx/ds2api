@@ -208,6 +208,7 @@ func (s *responsesStreamRuntime) emitFunctionCallDeltaEvents(deltas []toolCallDe
 }
 
 func (s *responsesStreamRuntime) emitFunctionCallDoneEvents(calls []util.ParsedToolCall) {
+	calls = util.CanonicalizeParsedToolCallNames(calls, s.toolNames)
 	calls = util.NormalizeToolCallInputsForExecution(calls)
 	calls = util.NormalizeParsedToolCallsForSchemas(calls, s.toolsRaw)
 	for idx, tc := range calls {

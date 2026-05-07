@@ -62,6 +62,9 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 	if best != nil {
 		return best.prefix, best.calls, best.suffix, true
 	}
+	if recoveredPrefix, recoveredCalls, recoveredSuffix, recoveredReady := recoverMalformedToolCallsWrapper(captured, toolNames); recoveredReady {
+		return recoveredPrefix, recoveredCalls, recoveredSuffix, true
+	}
 	if anyOpenFound {
 		return "", nil, "", false
 	}
@@ -87,6 +90,66 @@ func consumeXMLToolCapture(captured string, toolNames []string) (prefix string, 
 		}
 	}
 	return "", nil, "", false
+}
+
+func recoverMalformedToolCallsWrapper(captured string, toolNames []string) (prefix string, calls []util.ParsedToolCall, suffix string, ready bool) {
+	wrapperOpen, ok := findFirstToolMarkupTagByName(captured, 0, "tool_calls")
+	if !ok || wrapperOpen.Closing {
+		return "", nil, "", false
+	}
+	if _, ok := util.FindMatchingToolMarkupClose(captured, wrapperOpen); ok {
+		return "", nil, "", false
+	}
+
+	firstInvokeStart := -1
+	lastInvokeEnd := -1
+	for pos := wrapperOpen.End + 1; pos < len(captured); {
+		invokeTag, found := findFirstToolMarkupTagByNameFrom(captured, pos, "invoke", false)
+		if !found {
+			break
+		}
+		if firstInvokeStart < 0 && strings.TrimSpace(captured[wrapperOpen.End+1:invokeTag.Start]) != "" {
+			return "", nil, "", false
+		}
+		closeTag, ok := util.FindMatchingToolMarkupClose(captured, invokeTag)
+		if !ok {
+			return "", nil, "", false
+		}
+		if firstInvokeStart < 0 {
+			firstInvokeStart = invokeTag.Start
+		}
+		lastInvokeEnd = closeTag.End + 1
+		pos = closeTag.End + 1
+	}
+	if firstInvokeStart < 0 || lastInvokeEnd < 0 {
+		return "", nil, "", false
+	}
+
+	if !isRecoverableMalformedToolCallsTail(captured[lastInvokeEnd:]) {
+		return "", nil, "", false
+	}
+
+	xmlBlock := "<tool_calls>" + captured[firstInvokeStart:lastInvokeEnd] + "</tool_calls>"
+	parsed := util.ParseStandaloneToolCallsDetailed(xmlBlock, toolNames)
+	prefixPart := captured[:wrapperOpen.Start]
+	prefixPart, _ = trimWrappingJSONFence(prefixPart, "")
+	if len(parsed.Calls) > 0 {
+		return prefixPart, parsed.Calls, "", true
+	}
+	if parsed.SawToolCallSyntax {
+		return prefixPart, nil, "", true
+	}
+	return "", nil, "", false
+}
+
+func isRecoverableMalformedToolCallsTail(tail string) bool {
+	trimmed := strings.ToLower(strings.TrimSpace(tail))
+	switch trimmed {
+	case "</|dsml|", "</|dsml>", "</|dsml|>", "</tool_calls|", "</tool_calls|>":
+		return true
+	default:
+		return false
+	}
 }
 
 func hasOpenXMLToolTag(captured string) bool {
@@ -179,19 +242,31 @@ func stripInlineToolUsePrefix(content string) string {
 }
 
 func findPartialXMLToolTagStart(s string) int {
-	lastLT := strings.LastIndex(s, "<")
-	if lastLT < 0 {
-		return -1
+	best := -1
+	candidates := []int{
+		strings.LastIndex(s, "<"),
+		strings.LastIndex(s, "/|"),
+		strings.LastIndex(s, "|"),
+		strings.LastIndex(s, "/｜"),
+		strings.LastIndex(s, "｜"),
 	}
-	start := includeDuplicateLeadingLessThan(s, lastLT)
-	tail := s[start:]
-	if strings.Contains(tail, ">") {
-		return -1
+	for _, idx := range candidates {
+		if idx < 0 {
+			continue
+		}
+		start := idx
+		if s[idx] == '<' {
+			start = includeDuplicateLeadingLessThan(s, idx)
+		}
+		tail := s[start:]
+		if strings.Contains(tail, ">") {
+			continue
+		}
+		if util.IsPartialToolMarkupTagPrefix(tail) && start > best {
+			best = start
+		}
 	}
-	if util.IsPartialToolMarkupTagPrefix(tail) {
-		return start
-	}
-	return -1
+	return best
 }
 
 func trimWrappingJSONFence(prefix, suffix string) (string, string) {

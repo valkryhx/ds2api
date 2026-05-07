@@ -651,6 +651,92 @@ func TestHandleResponsesStreamAllowsUnknownToolName(t *testing.T) {
 	}
 }
 
+func TestHandleResponsesStreamUndeclaredWriteToolStillInterceptedWhenOnlyToolSearchDeclared(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	payload := `<|DSML|tool_calls><|DSML|invoke name="Write"><|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\e123.md]]></|DSML|parameter><|DSML|parameter name="content"><![CDATA[# translated]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+	streamBody := sseLine(payload) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "ToolSearch",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"ToolSearch"}, util.DefaultToolChoicePolicy(), "", toolsRaw)
+	body := rec.Body.String()
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected undeclared Write function_call done payload, body=%s", body)
+	}
+	if got := strings.TrimSpace(asString(donePayload["name"])); got != "Write" {
+		t.Fatalf("expected undeclared Write tool call, got %q body=%s", got, body)
+	}
+}
+
+func TestHandleResponsesNonStreamUndeclaredWriteToolStillInterceptedWhenOnlyToolSearchDeclared(t *testing.T) {
+	h := &Handler{}
+	rec := httptest.NewRecorder()
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body: io.NopCloser(strings.NewReader(
+			`data: {"p":"response/content","v":"<|DSML|tool_calls><|DSML|invoke name=\"Write\"><|DSML|parameter name=\"file_path\"><![CDATA[D:\\git_codes\\ds2api\\e123.md]]></|DSML|parameter><|DSML|parameter name=\"content\"><![CDATA[# translated]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>"}` + "\n" +
+				`data: [DONE]` + "\n",
+		)),
+	}
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "ToolSearch",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	h.handleResponsesNonStream(rec, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, []string{"ToolSearch"}, util.DefaultToolChoicePolicy(), "", toolsRaw)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	out := decodeJSONBody(t, rec.Body.String())
+	output, _ := out["output"].([]any)
+	found := false
+	for _, item := range output {
+		m, _ := item.(map[string]any)
+		if m == nil || m["type"] != "function_call" {
+			continue
+		}
+		if asString(m["name"]) == "Write" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected undeclared Write function_call output, got %#v", output)
+	}
+}
+
 func TestHandleResponsesStreamCanonicalizesDSMLShellAliasToDeclaredCodexToolName(t *testing.T) {
 	h := &Handler{}
 	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
@@ -728,6 +814,73 @@ func TestHandleResponsesStreamNormalizesCodexStringArgumentsBySchema(t *testing.
 	}
 	if args["command"] != `["pwd"]` {
 		t.Fatalf("expected command normalized to string for codex schema, got %#v", args["command"])
+	}
+}
+
+func TestHandleResponsesStreamRecoversCompleteWriteWithMalformedDSMLClose(t *testing.T) {
+	h := &Handler{}
+	req := httptest.NewRequest(http.MethodPost, "/v1/responses", nil)
+	rec := httptest.NewRecorder()
+
+	sseLine := func(v string) string {
+		b, _ := json.Marshal(map[string]any{
+			"p": "response/content",
+			"v": v,
+		})
+		return "data: " + string(b) + "\n"
+	}
+
+	payload := strings.Join([]string{
+		`<|DSML|tool_calls>`,
+		`<|DSML|invoke name="Write">`,
+		`<|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\s1.md]]></|DSML|parameter>`,
+		`<|DSML|parameter name="content"><![CDATA[# 搜索结果汇总]]></|DSML|parameter>`,
+		`</|DSML|invoke>`,
+		`</|DSML|`,
+	}, "\n")
+	streamBody := sseLine(payload) + "data: [DONE]\n"
+	resp := &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader(streamBody)),
+	}
+	toolsRaw := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name": "Write",
+				"parameters": map[string]any{
+					"type":     "object",
+					"required": []any{"file_path", "content"},
+					"properties": map[string]any{
+						"file_path": map[string]any{"type": "string"},
+						"content":   map[string]any{"type": "string"},
+					},
+				},
+			},
+		},
+	}
+
+	h.handleResponsesStream(rec, req, resp, "owner-a", "resp_test", "deepseek-chat", "prompt", false, false, []string{"Write"}, util.DefaultToolChoicePolicy(), "", toolsRaw)
+	body := rec.Body.String()
+	donePayload, ok := extractSSEEventPayload(body, "response.function_call_arguments.done")
+	if !ok {
+		t.Fatalf("expected function_call done payload, body=%s", body)
+	}
+	if got := strings.TrimSpace(asString(donePayload["name"])); got != "Write" {
+		t.Fatalf("expected recovered Write tool call, got %q body=%s", got, body)
+	}
+	var args map[string]any
+	if err := json.Unmarshal([]byte(asString(donePayload["arguments"])), &args); err != nil {
+		t.Fatalf("expected json arguments string, got=%q err=%v", asString(donePayload["arguments"]), err)
+	}
+	if args["file_path"] != `D:\git_codes\ds2api\s1.md` {
+		t.Fatalf("expected recovered file_path, got %#v", args["file_path"])
+	}
+	if args["content"] != "# 搜索结果汇总" {
+		t.Fatalf("expected recovered content, got %#v", args["content"])
+	}
+	if strings.Contains(body, `</|DSML|`) {
+		t.Fatalf("did not expect malformed wrapper tail to leak into output, body=%s", body)
 	}
 }
 

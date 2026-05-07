@@ -104,16 +104,15 @@ func (s *responsesStreamRuntime) finalize() {
 	finalText := s.text.String()
 
 	if s.bufferToolContent {
-		s.processToolStreamEvents(flushToolSieve(&s.sieve, s.toolNames), true)
+		s.processToolStreamEvents(flushToolSieve(&s.sieve, streamPermissiveToolNames(s.toolNames)), true)
 	}
 
-	parseToolNames := s.toolNames
+	parseToolNames := streamPermissiveToolNames(s.toolNames)
 	if s.toolChoice.IsNone() {
-		// Keep tool_choice=none strict even if upstream emits structured tool payload.
-		parseToolNames = []string{"__tool_choice_none_block__"}
+		parseToolNames = util.ToolChoiceNoneBlockParseNames()
 	}
 	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
-	detected := textParsed.Calls
+	detected := util.CanonicalizeParsedToolCallNames(textParsed.Calls, s.toolNames)
 	s.logToolPolicyRejections(textParsed)
 	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, parseToolNames)
 	s.logToolPolicyRejections(thinkingParsed)
@@ -129,6 +128,12 @@ func (s *responsesStreamRuntime) finalize() {
 		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
 		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
 	)
+	recordOpenAIToolUse("openai_tool_use", "openai://responses/stream", detected, map[string]any{
+		"endpoint":         "/v1/responses",
+		"thinking_enabled": s.thinkingEnabled,
+		"model":            s.model,
+		"trace_id":         strings.TrimSpace(s.traceID),
+	})
 
 	if len(detected) > 0 {
 		s.toolCallsEmitted = true
@@ -231,7 +236,7 @@ func (s *responsesStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Pa
 			s.emitTextDelta(p.Text)
 			continue
 		}
-		s.processToolStreamEvents(processToolSieveChunk(&s.sieve, p.Text, s.toolNames), true)
+		s.processToolStreamEvents(processToolSieveChunk(&s.sieve, p.Text, streamPermissiveToolNames(s.toolNames)), true)
 	}
 
 	return streamengine.ParsedDecision{ContentSeen: contentSeen}

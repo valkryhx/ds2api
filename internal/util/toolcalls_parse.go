@@ -16,6 +16,26 @@ type ToolCallParseResult struct {
 
 const toolChoiceNoneBlockName = "__tool_choice_none_block__"
 
+func ToolChoiceNoneBlockParseNames() []string {
+	return []string{toolChoiceNoneBlockName}
+}
+
+func IsToolChoiceNoneBlockName(name string) bool {
+	return strings.EqualFold(strings.TrimSpace(name), toolChoiceNoneBlockName)
+}
+
+func PermissiveToolParseNames(availableToolNames []string) []string {
+	for _, name := range availableToolNames {
+		if IsToolChoiceNoneBlockName(name) {
+			return ToolChoiceNoneBlockParseNames()
+		}
+	}
+	if len(availableToolNames) == 0 {
+		return nil
+	}
+	return availableToolNames[:0]
+}
+
 func ParseToolCalls(text string, availableToolNames []string) []ParsedToolCall {
 	return ParseToolCallsDetailed(text, availableToolNames).Calls
 }
@@ -129,7 +149,7 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		if !looksLikeToolExamplePrefix(prefix) {
 			candidates = append([]string{trailingTagPayload}, candidates...)
 		}
-	} else if looksLikeToolExampleContext(cleaned) {
+	} else if looksLikeToolExampleContext(cleaned) && !containsStandaloneToolMarkup(cleaned) {
 		return result
 	}
 	for _, c := range candidates {
@@ -175,6 +195,20 @@ func ParseStandaloneToolCallsDetailed(text string, availableToolNames []string) 
 		}
 	}
 	return result
+}
+
+func containsStandaloneToolMarkup(text string) bool {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return false
+	}
+	if len(parseMarkupToolCalls(trimmed)) > 0 {
+		return true
+	}
+	if len(parseXMLToolCalls(trimmed)) > 0 {
+		return true
+	}
+	return false
 }
 
 func parseMarkupToolCalls(text string) []ParsedToolCall {
@@ -229,7 +263,7 @@ func normalizeParsedToolCallsNoPolicy(parsed []ParsedToolCall) []ParsedToolCall 
 
 func shouldBypassToolAllowList(availableToolNames []string) bool {
 	for _, name := range availableToolNames {
-		if strings.EqualFold(strings.TrimSpace(name), toolChoiceNoneBlockName) {
+		if IsToolChoiceNoneBlockName(name) {
 			return false
 		}
 	}

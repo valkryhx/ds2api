@@ -45,6 +45,8 @@ func NewApp() *App {
 		"dev_capture_enabled", capture.Enabled(),
 		"dev_capture_limit", capture.Limit(),
 		"dev_capture_max_body_bytes", capture.MaxBodyBytes(),
+		"dev_capture_persist_to_disk", capture.PersistToDisk(),
+		"dev_capture_output_dir", capture.OutputDir(),
 	)
 	pool := account.NewPool(store)
 	var dsClient *deepseek.Client

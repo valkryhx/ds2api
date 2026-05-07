@@ -101,12 +101,24 @@ func extractRawTagValue(inner string) string {
 func extractStandaloneCDATA(inner string) (string, bool) {
 	trimmed := strings.TrimSpace(inner)
 	if cdataMatches := cdataPattern.FindStringSubmatch(trimmed); len(cdataMatches) >= 2 {
-		return cdataMatches[1], true
+		return strings.TrimSpace(strings.TrimSuffix(cdataMatches[1], "]]")), true
 	}
 	if strings.HasPrefix(strings.ToLower(trimmed), "<![cdata[") {
-		return trimmed[len("<![CDATA["):], true
+		value := strings.TrimSuffix(trimmed[len("<![CDATA["):], "]]>")
+		value = strings.TrimSuffix(value, "]]")
+		return strings.TrimSpace(value), true
 	}
 	return "", false
+}
+
+func recoverDanglingCDATAValue(raw string) (string, bool) {
+	trimmed := strings.TrimSpace(raw)
+	if !strings.HasPrefix(strings.ToLower(trimmed), "<![cdata[") {
+		return "", false
+	}
+	value := strings.TrimSpace(strings.TrimSuffix(trimmed[len("<![CDATA["):], "]]>"))
+	value = strings.TrimSpace(strings.TrimSuffix(value, "]]"))
+	return value, true
 }
 
 func parseJSONLiteralValue(raw string) (any, bool) {

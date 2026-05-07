@@ -179,6 +179,35 @@ func TestNormalizeOpenAIResponsesRequestToolChoiceNoneDisablesTools(t *testing.T
 	}
 }
 
+func TestNormalizeOpenAIChatRequestToolChoiceNoneBlocksExecution(t *testing.T) {
+	store := newEmptyStoreForNormalizeTest(t)
+	req := map[string]any{
+		"model": "gpt-4o",
+		"messages": []any{
+			map[string]any{"role": "user", "content": "ping"},
+		},
+		"tools": []any{
+			map[string]any{
+				"type": "function",
+				"function": map[string]any{
+					"name": "search",
+				},
+			},
+		},
+		"tool_choice": "none",
+	}
+	n, err := normalizeOpenAIChatRequest(store, req, "")
+	if err != nil {
+		t.Fatalf("normalize failed: %v", err)
+	}
+	if n.ToolChoice.Mode != util.ToolChoiceNone {
+		t.Fatalf("expected tool choice mode none, got %q", n.ToolChoice.Mode)
+	}
+	if len(n.ToolNames) != 1 || n.ToolNames[0] != "__tool_choice_none_block__" {
+		t.Fatalf("expected execution-block sentinel tool name, got %#v", n.ToolNames)
+	}
+}
+
 func TestNormalizeOpenAIResponsesRequestPreservesToolsRawForSchemaNormalization(t *testing.T) {
 	store := newEmptyStoreForNormalizeTest(t)
 	tools := []any{

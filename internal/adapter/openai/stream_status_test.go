@@ -13,6 +13,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"ds2api/internal/auth"
+	"ds2api/internal/devcapture"
 )
 
 type streamStatusAuthStub struct{}
@@ -187,5 +188,49 @@ func TestResponsesNonStreamMixedProseToolPayloadHandlerPath(t *testing.T) {
 	}
 	if !hasFunctionCall {
 		t.Fatalf("expected function_call output item, got %#v", output)
+	}
+}
+
+func TestChatCompletionsRouteRecordsOpenAIInboundCapture(t *testing.T) {
+	enabled := true
+	capture := devcapture.Configure(devcapture.Settings{Enabled: &enabled, Limit: 10, MaxBodyBytes: 4096})
+	t.Cleanup(func() {
+		devcapture.Configure(devcapture.Settings{})
+	})
+
+	h := &Handler{
+		Store: mockOpenAIConfig{wideInput: true},
+		Auth:  streamStatusAuthStub{},
+		DS:    streamStatusDSStub{resp: makeOpenAISSEHTTPResponse(`data: {"p":"response/content","v":"hello"}`, "data: [DONE]")},
+	}
+	r := chi.NewRouter()
+	RegisterRoutes(r, h)
+
+	reqBody := `{"model":"deepseek-chat","messages":[{"role":"user","content":"hi"}],"stream":true,"tools":[{"type":"function","function":{"name":"Write","parameters":{"type":"object","properties":{"file_path":{"type":"string"},"content":{"type":"string"}},"required":["file_path","content"]}}}],"tool_choice":"auto"}`
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", strings.NewReader(reqBody))
+	req.Header.Set("Authorization", "Bearer direct-token")
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	r.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d body=%s", rec.Code, rec.Body.String())
+	}
+
+	foundCapture := false
+	for _, item := range capture.Snapshot() {
+		if item.Label != "openai_inbound" {
+			continue
+		}
+		if strings.Contains(item.URL, "/v1/chat/completions") &&
+			strings.Contains(item.RequestBody, `"model":"deepseek-chat"`) &&
+			strings.Contains(item.RequestBody, `"tool_choice":"auto"`) &&
+			strings.Contains(item.RequestBody, `"name":"Write"`) {
+			foundCapture = true
+			break
+		}
+	}
+	if !foundCapture {
+		t.Fatalf("expected openai_inbound capture, got %#v", capture.Snapshot())
 	}
 }

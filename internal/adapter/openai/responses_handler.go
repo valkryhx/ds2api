@@ -69,6 +69,7 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, "invalid json")
 		return
 	}
+	recordOpenAIInbound(r, a, req)
 	traceID := requestTraceID(r)
 	stdReq, err := normalizeOpenAIResponsesRequest(h.Store, req, traceID)
 	if err != nil {
@@ -113,10 +114,9 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		return
 	}
 	result := sse.CollectStream(resp, thinkingEnabled, true)
-	parseToolNames := toolNames
+	parseToolNames := util.PermissiveToolParseNames(toolNames)
 	if toolChoice.IsNone() {
-		// Keep tool_choice=none strict even if upstream emits structured tool payload.
-		parseToolNames = []string{"__tool_choice_none_block__"}
+		parseToolNames = util.ToolChoiceNoneBlockParseNames()
 	}
 	textParsed := util.ParseStandaloneToolCallsDetailed(result.Text, parseToolNames)
 	logResponsesToolPolicyRejection(traceID, toolChoice, textParsed, "text")
@@ -134,6 +134,20 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		"thinking_rejected_by_policy", thinkingParsed.RejectedByPolicy,
 		"thinking_saw_tool_syntax", thinkingParsed.SawToolCallSyntax,
 	)
+	recordOpenAIToolUse("openai_tool_use", "openai://responses/nonstream", textParsed.Calls, map[string]any{
+		"endpoint":         "/v1/responses",
+		"channel":          "text",
+		"thinking_enabled": thinkingEnabled,
+		"model":            model,
+		"trace_id":         strings.TrimSpace(traceID),
+	})
+	recordOpenAIToolUse("openai_tool_use", "openai://responses/nonstream", thinkingParsed.Calls, map[string]any{
+		"endpoint":         "/v1/responses",
+		"channel":          "thinking",
+		"thinking_enabled": thinkingEnabled,
+		"model":            model,
+		"trace_id":         strings.TrimSpace(traceID),
+	})
 
 	callCount := len(textParsed.Calls)
 	if toolChoice.IsRequired() && callCount == 0 {
@@ -164,7 +178,10 @@ func (h *Handler) handleResponsesStream(w http.ResponseWriter, r *http.Request, 
 	if thinkingEnabled {
 		initialType = "thinking"
 	}
-	bufferToolContent := len(toolNames) > 0 && h.toolcallFeatureMatchEnabled()
+	bufferToolContent := h.toolcallFeatureMatchEnabled()
+	if toolChoice.IsNone() {
+		bufferToolContent = false
+	}
 	emitEarlyToolDeltas := h.toolcallEarlyEmitHighConfidence()
 
 	streamRuntime := newResponsesStreamRuntime(

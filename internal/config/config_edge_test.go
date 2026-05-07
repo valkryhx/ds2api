@@ -233,9 +233,11 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 			"slow": "deepseek-reasoner",
 		},
 		DevCapture: DevCaptureConfig{
-			Enabled:      &enabled,
-			Limit:        20,
-			MaxBodyBytes: 4096,
+			Enabled:       &enabled,
+			Limit:         20,
+			MaxBodyBytes:  4096,
+			PersistToDisk: &enabled,
+			OutputDir:     "logs/dev_captures",
 		},
 		VercelSyncHash: "hash123",
 		VercelSyncTime: 1234567890,
@@ -271,6 +273,12 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 	}
 	if decoded.DevCapture.MaxBodyBytes != 4096 {
 		t.Fatalf("unexpected dev capture max body bytes: %d", decoded.DevCapture.MaxBodyBytes)
+	}
+	if decoded.DevCapture.PersistToDisk == nil || !*decoded.DevCapture.PersistToDisk {
+		t.Fatalf("unexpected dev capture persist flag: %#v", decoded.DevCapture.PersistToDisk)
+	}
+	if decoded.DevCapture.OutputDir != "logs/dev_captures" {
+		t.Fatalf("unexpected dev capture output dir: %q", decoded.DevCapture.OutputDir)
 	}
 	if decoded.VercelSyncHash != "hash123" {
 		t.Fatalf("unexpected vercel sync hash: %q", decoded.VercelSyncHash)
@@ -344,18 +352,27 @@ func TestConfigCloneKeepsDevCapture(t *testing.T) {
 	enabled := true
 	cfg := Config{
 		DevCapture: DevCaptureConfig{
-			Enabled:      &enabled,
-			Limit:        7,
-			MaxBodyBytes: 1024,
+			Enabled:       &enabled,
+			Limit:         7,
+			MaxBodyBytes:  1024,
+			PersistToDisk: &enabled,
+			OutputDir:     "logs/dev_captures",
 		},
 	}
 	cloned := cfg.Clone()
 	*cfg.DevCapture.Enabled = false
+	*cfg.DevCapture.PersistToDisk = false
 	if cloned.DevCapture.Enabled == nil || !*cloned.DevCapture.Enabled {
 		t.Fatalf("expected cloned dev capture enabled, got %#v", cloned.DevCapture.Enabled)
 	}
 	if cloned.DevCapture.Limit != 7 || cloned.DevCapture.MaxBodyBytes != 1024 {
 		t.Fatalf("unexpected cloned dev capture: %#v", cloned.DevCapture)
+	}
+	if cloned.DevCapture.PersistToDisk == nil || !*cloned.DevCapture.PersistToDisk {
+		t.Fatalf("expected cloned dev capture persist flag, got %#v", cloned.DevCapture.PersistToDisk)
+	}
+	if cloned.DevCapture.OutputDir != "logs/dev_captures" {
+		t.Fatalf("unexpected cloned dev capture output dir: %q", cloned.DevCapture.OutputDir)
 	}
 }
 

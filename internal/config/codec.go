@@ -47,7 +47,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if strings.TrimSpace(c.Embeddings.Provider) != "" {
 		m["embeddings"] = c.Embeddings
 	}
-	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 {
+	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 || c.DevCapture.PersistToDisk != nil || strings.TrimSpace(c.DevCapture.OutputDir) != "" {
 		m["dev_capture"] = c.DevCapture
 	}
 	if c.VercelSyncHash != "" {
@@ -149,9 +149,11 @@ func (c Config) Clone() Config {
 		Responses:  c.Responses,
 		Embeddings: c.Embeddings,
 		DevCapture: DevCaptureConfig{
-			Enabled:      cloneBoolPtr(c.DevCapture.Enabled),
-			Limit:        c.DevCapture.Limit,
-			MaxBodyBytes: c.DevCapture.MaxBodyBytes,
+			Enabled:       cloneBoolPtr(c.DevCapture.Enabled),
+			Limit:         c.DevCapture.Limit,
+			MaxBodyBytes:  c.DevCapture.MaxBodyBytes,
+			PersistToDisk: cloneBoolPtr(c.DevCapture.PersistToDisk),
+			OutputDir:     c.DevCapture.OutputDir,
 		},
 		VercelSyncHash:   c.VercelSyncHash,
 		VercelSyncTime:   c.VercelSyncTime,

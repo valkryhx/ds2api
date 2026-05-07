@@ -1,7 +1,10 @@
 package devcapture
 
 import (
+	"encoding/json"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -144,4 +147,126 @@ func TestGlobalAndConfigureAreSafeToCallConcurrently(t *testing.T) {
 		}(i + 1)
 	}
 	wg.Wait()
+}
+
+func TestRecordPersistsEntryToDiskWhenEnabled(t *testing.T) {
+	enabled := true
+	persistToDisk := true
+	outputDir := t.TempDir()
+	s := NewFromSettings(Settings{
+		Enabled:       &enabled,
+		Limit:         5,
+		MaxBodyBytes:  1024,
+		PersistToDisk: &persistToDisk,
+		OutputDir:     outputDir,
+	})
+
+	s.Record("openai_tool_use", "/v1/chat/completions", "acc1", 200, map[string]any{
+		"name":  "Write",
+		"input": map[string]any{"file_path": "s1.md"},
+	}, map[string]any{"ok": true})
+
+	items := s.Snapshot()
+	if len(items) != 1 {
+		t.Fatalf("expected 1 item, got %d", len(items))
+	}
+	path := filepath.Join(outputDir, "openai_tool_use.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected persisted file, got error: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 persisted line, got %d", len(lines))
+	}
+	var entry Entry
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("expected valid json line, got error: %v", err)
+	}
+	if entry.Label != "openai_tool_use" {
+		t.Fatalf("expected openai_tool_use label, got %q", entry.Label)
+	}
+	if !strings.Contains(entry.RequestBody, "s1.md") {
+		t.Fatalf("expected persisted request body to include s1.md, got %q", entry.RequestBody)
+	}
+}
+
+func TestWrapBodyPersistsCapturedResponseToDiskWhenEnabled(t *testing.T) {
+	enabled := true
+	persistToDisk := true
+	outputDir := t.TempDir()
+	s := NewFromSettings(Settings{
+		Enabled:       &enabled,
+		Limit:         5,
+		MaxBodyBytes:  1024,
+		PersistToDisk: &persistToDisk,
+		OutputDir:     outputDir,
+	})
+	session := s.Start("deepseek_completion", "/chat_session/create", "acc1", map[string]any{"prompt": "hello"})
+	if session == nil {
+		t.Fatal("expected session")
+	}
+	rc := session.WrapBody(io.NopCloser(strings.NewReader("stream-body")), 200)
+	_, _ = io.ReadAll(rc)
+	_ = rc.Close()
+
+	path := filepath.Join(outputDir, "deepseek_completion.jsonl")
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("expected persisted file, got error: %v", err)
+	}
+	lines := strings.Split(strings.TrimSpace(string(data)), "\n")
+	if len(lines) != 1 {
+		t.Fatalf("expected 1 persisted line, got %d", len(lines))
+	}
+	var entry Entry
+	if err := json.Unmarshal([]byte(lines[0]), &entry); err != nil {
+		t.Fatalf("expected valid json line, got error: %v", err)
+	}
+	if entry.ResponseBody != "stream-body" {
+		t.Fatalf("expected persisted response body, got %q", entry.ResponseBody)
+	}
+}
+
+func TestNewFromSettingsUsesPersistDiskConfigValues(t *testing.T) {
+	enabled := true
+	persistToDisk := true
+	outputDir := filepath.Join("logs", "dev_captures")
+	s := NewFromSettings(Settings{
+		Enabled:       &enabled,
+		Limit:         20,
+		MaxBodyBytes:  4096,
+		PersistToDisk: &persistToDisk,
+		OutputDir:     outputDir,
+	})
+	if !s.PersistToDisk() {
+		t.Fatal("expected persist-to-disk from settings")
+	}
+	if s.OutputDir() != outputDir {
+		t.Fatalf("expected output dir %q, got %q", outputDir, s.OutputDir())
+	}
+}
+
+func TestNewFromSettingsPersistDiskEnvOverridesConfig(t *testing.T) {
+	enabled := true
+	t.Setenv("DS2API_DEV_PACKET_CAPTURE_PERSIST_TO_DISK", "true")
+	t.Setenv("DS2API_DEV_PACKET_CAPTURE_OUTPUT_DIR", "tmp/devcaptures")
+
+	s := NewFromSettings(Settings{
+		Enabled:       &enabled,
+		Limit:         20,
+		MaxBodyBytes:  4096,
+		PersistToDisk: boolPtr(false),
+		OutputDir:     "ignored",
+	})
+	if !s.PersistToDisk() {
+		t.Fatal("expected env to enable persist-to-disk")
+	}
+	if s.OutputDir() != "tmp/devcaptures" {
+		t.Fatalf("expected env output dir, got %q", s.OutputDir())
+	}
+}
+
+func boolPtr(v bool) *bool {
+	return &v
 }
