@@ -8,8 +8,7 @@ import (
 
 const (
 	parsedLineBufferSize = 128
-	scannerBufferSize    = 64 * 1024
-	maxScannerLineSize   = 2 * 1024 * 1024
+	lineReaderBufferSize = 64 * 1024
 )
 
 // StartParsedLinePump scans an upstream DeepSeek SSE body and emits normalized
@@ -20,11 +19,19 @@ func StartParsedLinePump(ctx context.Context, body io.Reader, thinkingEnabled bo
 	done := make(chan error, 1)
 	go func() {
 		defer close(out)
-		scanner := bufio.NewScanner(body)
-		scanner.Buffer(make([]byte, 0, scannerBufferSize), maxScannerLineSize)
+		reader := bufio.NewReaderSize(body, lineReaderBufferSize)
 		currentType := initialType
-		for scanner.Scan() {
-			line := append([]byte{}, scanner.Bytes()...)
+		for {
+			line, err := reader.ReadBytes('\n')
+			if len(line) == 0 && err != nil {
+				if err == io.EOF {
+					done <- nil
+				} else {
+					done <- err
+				}
+				return
+			}
+			line = append([]byte(nil), line...)
 			result := ParseDeepSeekContentLine(line, thinkingEnabled, currentType)
 			currentType = result.NextType
 			select {
@@ -33,8 +40,15 @@ func StartParsedLinePump(ctx context.Context, body io.Reader, thinkingEnabled bo
 				done <- ctx.Err()
 				return
 			}
+			if err != nil {
+				if err == io.EOF {
+					done <- nil
+				} else {
+					done <- err
+				}
+				return
+			}
 		}
-		done <- scanner.Err()
 	}()
 	return out, done
 }

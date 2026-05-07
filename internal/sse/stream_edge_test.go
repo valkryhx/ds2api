@@ -175,3 +175,29 @@ func TestStartParsedLinePumpThinkingDisabled(t *testing.T) {
 		t.Fatalf("expected at least 1 part, got %d", len(parts))
 	}
 }
+
+func TestStartParsedLinePumpHandlesVeryLargeSSELine(t *testing.T) {
+	large := strings.Repeat("x", 2*1024*1024+256)
+	body := strings.NewReader("data: {\"p\":\"response/content\",\"v\":\"" + large + "\"}\n" + "data: [DONE]\n")
+	results, done := StartParsedLinePump(context.Background(), body, false, "text")
+
+	collected := make([]LineResult, 0, 2)
+	for r := range results {
+		collected = append(collected, r)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("expected large SSE line to parse without scanner limit failure, got %v", err)
+	}
+	if len(collected) < 2 {
+		t.Fatalf("expected content result and stop result, got %d", len(collected))
+	}
+	if len(collected[0].Parts) != 1 {
+		t.Fatalf("expected first result to contain one content part, got %#v", collected[0])
+	}
+	if got := collected[0].Parts[0].Text; got != large {
+		t.Fatalf("expected large content preserved, len=%d got len=%d", len(large), len(got))
+	}
+	if !collected[len(collected)-1].Stop {
+		t.Fatal("expected final result to stop on DONE")
+	}
+}

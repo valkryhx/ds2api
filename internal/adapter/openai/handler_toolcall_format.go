@@ -79,12 +79,14 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy util.ToolCh
 		"12) Never emit a partial or truncated closing tag such as </|DSML|.",
 		"13) Fill every required parameter with a non-empty value before calling a tool.",
 	}
+	correctExamples := buildOpenAIStaticToolExamples(names)
 	toolPrompt := strings.Join([]string{
 		"You have access to these tools:",
 		"",
 		strings.Join(toolSchemas, "\n\n"),
 		"",
 		strings.Join(dsmlFormat, "\n"),
+		correctExamples,
 		"",
 		"History markers in conversation:",
 		"- [TOOL_CALL_HISTORY]...[/TOOL_CALL_HISTORY] means a tool call you already made earlier.",
@@ -115,6 +117,65 @@ func injectToolPrompt(messages []map[string]any, tools []any, policy util.ToolCh
 	}
 	messages = append([]map[string]any{{"role": "system", "content": toolPrompt}}, messages...)
 	return messages, names
+}
+
+func buildOpenAIStaticToolExamples(toolNames []string) string {
+	examples := make([]string, 0, 4)
+	seen := map[string]bool{}
+	for _, name := range toolNames {
+		name = strings.TrimSpace(name)
+		if name == "" || seen[name] {
+			continue
+		}
+		seen[name] = true
+		switch name {
+		case "Write":
+			examples = append(examples, strings.Join([]string{
+				"Example — Write:",
+				"<|DSML|tool_calls>",
+				`  <|DSML|invoke name="Write">`,
+				`    <|DSML|parameter name="file_path"><![CDATA[notes.txt]]></|DSML|parameter>`,
+				`    <|DSML|parameter name="content"><![CDATA[Hello world]]></|DSML|parameter>`,
+				"  </|DSML|invoke>",
+				"</|DSML|tool_calls>",
+			}, "\n"))
+		case "write_to_file":
+			examples = append(examples, strings.Join([]string{
+				"Example — write_to_file:",
+				"<|DSML|tool_calls>",
+				`  <|DSML|invoke name="write_to_file">`,
+				`    <|DSML|parameter name="path"><![CDATA[notes.txt]]></|DSML|parameter>`,
+				`    <|DSML|parameter name="content"><![CDATA[Hello world]]></|DSML|parameter>`,
+				"  </|DSML|invoke>",
+				"</|DSML|tool_calls>",
+			}, "\n"))
+		case "MultiEdit":
+			examples = append(examples, strings.Join([]string{
+				"Example — MultiEdit:",
+				"<|DSML|tool_calls>",
+				`  <|DSML|invoke name="MultiEdit">`,
+				`    <|DSML|parameter name="file_path"><![CDATA[README.md]]></|DSML|parameter>`,
+				`    <|DSML|parameter name="edits"><item><old_string><![CDATA[foo]]></old_string><new_string><![CDATA[bar]]></new_string></item></|DSML|parameter>`,
+				"  </|DSML|invoke>",
+				"</|DSML|tool_calls>",
+			}, "\n"))
+		case "Edit":
+			examples = append(examples, strings.Join([]string{
+				"Example — Edit:",
+				"<|DSML|tool_calls>",
+				`  <|DSML|invoke name="Edit">`,
+				`    <|DSML|parameter name="file_path"><![CDATA[README.md]]></|DSML|parameter>`,
+				`    <|DSML|parameter name="old_string"><![CDATA[foo]]></|DSML|parameter>`,
+				`    <|DSML|parameter name="new_string"><![CDATA[bar]]></|DSML|parameter>`,
+				"  </|DSML|invoke>",
+				"</|DSML|tool_calls>",
+			}, "\n"))
+		}
+	}
+	if len(examples) == 0 {
+		return ""
+	}
+	return "\n【CORRECT EXAMPLES】:\n\n" + strings.Join(examples, "\n\n")
 }
 
 func formatIncrementalStreamToolCallDeltas(deltas []toolCallDelta, ids map[int]string) []map[string]any {

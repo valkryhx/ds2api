@@ -200,3 +200,134 @@ func TestBuildOpenAIFinalPrompt_RequiresCompleteDSMLClosersAndNonEmptyRequiredPa
 		t.Fatalf("expected non-empty required-parameter instruction, got: %q", finalPrompt)
 	}
 }
+
+func TestBuildOpenAIFinalPrompt_IncludesStaticWriteFewShotExample(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "write file"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "Write",
+				"description": "write file",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, "CORRECT EXAMPLES") {
+		t.Fatalf("expected correct examples block, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|invoke name="Write">`) {
+		t.Fatalf("expected Write example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="file_path"><![CDATA[notes.txt]]></|DSML|parameter>`) {
+		t.Fatalf("expected Write file_path example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="content"><![CDATA[Hello world]]></|DSML|parameter>`) {
+		t.Fatalf("expected Write content example, got: %q", finalPrompt)
+	}
+	if strings.Contains(finalPrompt, `<|DSML|invoke name="write_to_file">`) {
+		t.Fatalf("did not expect write_to_file example when only Write is declared, got: %q", finalPrompt)
+	}
+}
+
+func TestBuildOpenAIFinalPrompt_IncludesStaticWriteToFileFewShotExample(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "write file"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "write_to_file",
+				"description": "write file",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, `<|DSML|invoke name="write_to_file">`) {
+		t.Fatalf("expected write_to_file example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="path"><![CDATA[notes.txt]]></|DSML|parameter>`) {
+		t.Fatalf("expected write_to_file path example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="content"><![CDATA[Hello world]]></|DSML|parameter>`) {
+		t.Fatalf("expected write_to_file content example, got: %q", finalPrompt)
+	}
+	if strings.Contains(finalPrompt, `<|DSML|parameter name="file_path"><![CDATA[notes.txt]]></|DSML|parameter>`) {
+		t.Fatalf("did not expect Write-style file_path example for write_to_file, got: %q", finalPrompt)
+	}
+}
+
+func TestBuildOpenAIFinalPrompt_IncludesStaticMultiEditFewShotExample(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "edit file"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "MultiEdit",
+				"description": "edit file multiple times",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, `<|DSML|invoke name="MultiEdit">`) {
+		t.Fatalf("expected MultiEdit example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="edits"><item><old_string><![CDATA[foo]]></old_string><new_string><![CDATA[bar]]></new_string></item></|DSML|parameter>`) {
+		t.Fatalf("expected MultiEdit edits item-array example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="file_path"><![CDATA[README.md]]></|DSML|parameter>`) {
+		t.Fatalf("expected MultiEdit file_path example, got: %q", finalPrompt)
+	}
+}
+
+func TestBuildOpenAIFinalPrompt_IncludesStaticEditFewShotExample(t *testing.T) {
+	messages := []any{
+		map[string]any{"role": "user", "content": "edit file"},
+	}
+	tools := []any{
+		map[string]any{
+			"type": "function",
+			"function": map[string]any{
+				"name":        "Edit",
+				"description": "edit file",
+				"parameters": map[string]any{
+					"type": "object",
+				},
+			},
+		},
+	}
+
+	finalPrompt, _ := buildOpenAIFinalPrompt(messages, tools, "")
+	if !strings.Contains(finalPrompt, `<|DSML|invoke name="Edit">`) {
+		t.Fatalf("expected Edit example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="file_path"><![CDATA[README.md]]></|DSML|parameter>`) {
+		t.Fatalf("expected Edit file_path example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="old_string"><![CDATA[foo]]></|DSML|parameter>`) {
+		t.Fatalf("expected Edit old_string example, got: %q", finalPrompt)
+	}
+	if !strings.Contains(finalPrompt, `<|DSML|parameter name="new_string"><![CDATA[bar]]></|DSML|parameter>`) {
+		t.Fatalf("expected Edit new_string example, got: %q", finalPrompt)
+	}
+	if strings.Contains(finalPrompt, `<|DSML|parameter name="edits">`) {
+		t.Fatalf("did not expect MultiEdit-style edits array in Edit example, got: %q", finalPrompt)
+	}
+}
