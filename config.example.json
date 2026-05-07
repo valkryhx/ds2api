@@ -44,9 +44,11 @@
     "provider": "deterministic"
   },
   "dev_capture": {
-    "enabled": false,
+    "enabled": true,
     "limit": 20,
-    "max_body_bytes": 2097152
+    "max_body_bytes": 2097152,
+    "persist_to_disk": true,
+    "output_dir": "logs/dev_captures"
   },
   "claude_model_mapping": {
     "fast": "deepseek-chat",
