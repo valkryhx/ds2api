@@ -359,3 +359,36 @@ test('parseStandaloneToolCalls canonicalizes DSML shell alias to namespaced decl
   assert.equal(calls[0].name, 'functions.shell_command');
   assert.equal(calls[0].input.command, 'pwd');
 });
+
+test('parseStandaloneToolCalls supports fullwidth DSML delimiters', () => {
+  const payload = '<｜DSML｜tool_calls><｜DSML｜invoke name="shell"><｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter></｜DSML｜invoke></｜DSML｜tool_calls>';
+  const calls = parseStandaloneToolCalls(payload, ['functions.shell_command']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'functions.shell_command');
+  assert.equal(calls[0].input.command, 'pwd');
+});
+
+test('parseStandaloneToolCalls accepts mixed and trailing DSML delimiters', () => {
+  const payload = '<|DSML｜tool_calls｜><｜DSML|invoke name="shell"><|DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML|parameter></|DSML｜invoke></｜DSML|tool_calls｜>';
+  const calls = parseStandaloneToolCalls(payload, ['functions.shell_command']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'functions.shell_command');
+  assert.equal(calls[0].input.command, 'pwd');
+});
+
+test('sieve intercepts fullwidth DSML tool markup without raw leak', () => {
+  const events = runSieve(
+    [
+      '<｜DSML｜tool_calls><｜DSML｜invoke name="shell">',
+      '<｜DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML｜parameter>',
+      '</｜DSML｜invoke></｜DSML｜tool_calls>',
+    ],
+    ['functions.shell_command'],
+  );
+  const leakedText = collectText(events);
+  const calls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'functions.shell_command');
+  assert.equal(calls[0].input.command, 'pwd');
+  assert.equal(leakedText.includes('DSML'), false);
+});

@@ -172,6 +172,14 @@ function findToolSegmentStart(s) {
     return -1;
   }
   const lower = s.toLowerCase();
+  const dsmlStart = s.search(/<(?:\||｜)dsml(?:\||｜)(?:\s*(?:\||｜))*\s*tool_calls/i);
+  if (dsmlStart >= 0 && !insideCodeFence(s.slice(0, dsmlStart))) {
+    return dsmlStart;
+  }
+  const canonicalStart = lower.indexOf('<tool_calls');
+  if (canonicalStart >= 0 && !insideCodeFence(s.slice(0, canonicalStart))) {
+    return canonicalStart;
+  }
   const keywords = ['tool_calls', 'function.name:', '[tool_call_history]'];
   let offset = 0;
   // eslint-disable-next-line no-constant-condition
@@ -207,6 +215,25 @@ function consumeToolCapture(state, toolNames) {
   const captured = state.capture || '';
   if (!captured) {
     return { ready: false, prefix: '', calls: [], suffix: '' };
+  }
+  if (looksLikeToolMarkupCapture(captured)) {
+    const parsedMarkup = parseStandaloneToolCallsDetailed(captured, toolNames);
+    if (Array.isArray(parsedMarkup.calls) && parsedMarkup.calls.length > 0) {
+      return {
+        ready: true,
+        prefix: '',
+        calls: parsedMarkup.calls,
+        suffix: '',
+      };
+    }
+    if (parsedMarkup.sawToolCallSyntax && parsedMarkup.rejectedByPolicy) {
+      return {
+        ready: true,
+        prefix: '',
+        calls: [],
+        suffix: '',
+      };
+    }
   }
   const lower = captured.toLowerCase();
   
@@ -266,6 +293,14 @@ function consumeToolCapture(state, toolNames) {
     calls: parsed.calls,
     suffix: suffixPart,
   };
+}
+
+function looksLikeToolMarkupCapture(text) {
+  const lower = (text || '').toLowerCase();
+  return lower.includes('<|dsml|')
+    || lower.includes('<｜dsml｜')
+    || lower.includes('<tool_calls')
+    || lower.includes('<invoke');
 }
 
 module.exports = {
