@@ -376,6 +376,25 @@ func TestConfigCloneKeepsDevCapture(t *testing.T) {
 	}
 }
 
+func TestConfigCloneKeepsCurrentInputFile(t *testing.T) {
+	enabled := true
+	cfg := Config{
+		CurrentInputFile: CurrentInputFileConfig{
+			Enabled:  &enabled,
+			MinChars: 12345,
+		},
+	}
+	cloned := cfg.Clone()
+	*cfg.CurrentInputFile.Enabled = false
+	cfg.CurrentInputFile.MinChars = 7
+	if cloned.CurrentInputFile.Enabled == nil || !*cloned.CurrentInputFile.Enabled {
+		t.Fatalf("expected cloned current input file enabled, got %#v", cloned.CurrentInputFile.Enabled)
+	}
+	if cloned.CurrentInputFile.MinChars != 12345 {
+		t.Fatalf("unexpected cloned current input file min chars: %d", cloned.CurrentInputFile.MinChars)
+	}
+}
+
 // ─── Account.Identifier edge cases ───────────────────────────────────
 
 func TestAccountIdentifierPreferenceMobileOverToken(t *testing.T) {
@@ -528,6 +547,45 @@ func TestStoreCompatWideInputStrictOutputCanDisable(t *testing.T) {
 	}
 	if rawCompat["wide_input_strict_output"] != false {
 		t.Fatalf("expected explicit false in compat, got %#v", rawCompat)
+	}
+}
+
+func TestStoreCurrentInputFileDefaultsEnabled(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_JSON", `{"keys":["k1"],"accounts":[]}`)
+	store := LoadStore()
+	if !store.CurrentInputFileEnabled() {
+		t.Fatal("expected current_input_file.enabled default true")
+	}
+	if got := store.CurrentInputFileMinChars(); got != 0 {
+		t.Fatalf("expected current_input_file.min_chars default 0, got %d", got)
+	}
+}
+
+func TestStoreCurrentInputFileCanDisableAndMarshal(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_JSON", `{"keys":["k1"],"accounts":[],"current_input_file":{"enabled":false,"min_chars":999}}`)
+	store := LoadStore()
+	if store.CurrentInputFileEnabled() {
+		t.Fatal("expected current_input_file.enabled=false when explicitly configured")
+	}
+	if got := store.CurrentInputFileMinChars(); got != 999 {
+		t.Fatalf("expected current_input_file.min_chars=999, got %d", got)
+	}
+
+	snap := store.Snapshot()
+	data, err := snap.MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshal failed: %v", err)
+	}
+	var out map[string]any
+	if err := json.Unmarshal(data, &out); err != nil {
+		t.Fatalf("decode failed: %v", err)
+	}
+	rawCurrentInput, ok := out["current_input_file"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected current_input_file in marshaled output, got %#v", out)
+	}
+	if rawCurrentInput["enabled"] != false || int(rawCurrentInput["min_chars"].(float64)) != 999 {
+		t.Fatalf("unexpected current_input_file output: %#v", rawCurrentInput)
 	}
 }
 

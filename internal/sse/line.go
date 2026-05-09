@@ -8,6 +8,7 @@ type LineResult struct {
 	Stop          bool
 	ContentFilter bool
 	ErrorMessage  string
+	ErrorCode     string
 	Parts         []ContentPart
 	NextType      string
 }
@@ -36,7 +37,17 @@ func ParseDeepSeekContentLine(raw []byte, thinkingEnabled bool, currentType stri
 			Stop:          true,
 			ContentFilter: true,
 			ErrorMessage:  "content filtered by upstream",
+			ErrorCode:     code,
 			NextType:      currentType,
+		}
+	}
+	if isDeepSeekHintError(chunk) {
+		return LineResult{
+			Parsed:       true,
+			Stop:         true,
+			ErrorMessage: deepSeekHintErrorMessage(chunk),
+			ErrorCode:    deepSeekHintErrorCode(chunk),
+			NextType:     currentType,
 		}
 	}
 	parts, finished, nextType := ParseSSEChunkForContent(chunk, thinkingEnabled, currentType)
@@ -46,4 +57,33 @@ func ParseDeepSeekContentLine(raw []byte, thinkingEnabled bool, currentType stri
 		Parts:    parts,
 		NextType: nextType,
 	}
+}
+
+func isDeepSeekHintError(chunk map[string]any) bool {
+	typ, _ := chunk["type"].(string)
+	if typ == "error" {
+		return true
+	}
+	return deepSeekHintErrorCode(chunk) != ""
+}
+
+func deepSeekHintErrorCode(chunk map[string]any) string {
+	for _, key := range []string{"finish_reason", "code"} {
+		if code, _ := chunk[key].(string); code != "" {
+			return code
+		}
+	}
+	return ""
+}
+
+func deepSeekHintErrorMessage(chunk map[string]any) string {
+	for _, key := range []string{"content", "message", "msg"} {
+		if msg, _ := chunk[key].(string); msg != "" {
+			return msg
+		}
+	}
+	if code := deepSeekHintErrorCode(chunk); code != "" {
+		return code
+	}
+	return "upstream error"
 }

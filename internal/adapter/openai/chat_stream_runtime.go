@@ -24,6 +24,8 @@ type chatStreamRuntime struct {
 
 	thinkingEnabled bool
 	searchEnabled   bool
+	upstreamErr     string
+	upstreamErrCode string
 
 	firstChunkSent       bool
 	bufferToolContent    bool
@@ -97,7 +99,29 @@ func (s *chatStreamRuntime) sendDone() {
 	}
 }
 
+func (s *chatStreamRuntime) sendErrorChunk(message, code string) {
+	msg := strings.TrimSpace(message)
+	if msg == "" {
+		return
+	}
+	code = strings.TrimSpace(code)
+	if code == "" {
+		code = "upstream_error"
+	}
+	s.sendChunk(map[string]any{
+		"error": map[string]any{
+			"message": msg,
+			"type":    "invalid_request_error",
+			"code":    code,
+			"param":   nil,
+		},
+	})
+}
+
 func (s *chatStreamRuntime) finalize(finishReason string) {
+	if strings.TrimSpace(s.upstreamErr) != "" && (finishReason == "length" || finishReason == "content_filter") {
+		s.sendErrorChunk(s.upstreamErr, s.upstreamErrCode)
+	}
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
 	detected := openaifmt.DetectChatToolCalls(finalText, finalThinking, s.permissiveParseToolNames())
@@ -184,7 +208,15 @@ func (s *chatStreamRuntime) onParsed(parsed sse.LineResult) streamengine.ParsedD
 		return streamengine.ParsedDecision{}
 	}
 	if parsed.ContentFilter || parsed.ErrorMessage != "" {
-		return streamengine.ParsedDecision{Stop: true, StopReason: streamengine.StopReason("content_filter")}
+		if strings.TrimSpace(parsed.ErrorMessage) != "" {
+			s.upstreamErr = parsed.ErrorMessage
+			s.upstreamErrCode = parsed.ErrorCode
+		}
+		stopReason := streamengine.StopReason("content_filter")
+		if strings.TrimSpace(parsed.ErrorCode) == "input_exceeds_limit" {
+			stopReason = streamengine.StopReason("input_exceeds_limit")
+		}
+		return streamengine.ParsedDecision{Stop: true, StopReason: stopReason}
 	}
 	if parsed.Stop {
 		return streamengine.ParsedDecision{Stop: true, StopReason: streamengine.StopReasonHandlerRequested}

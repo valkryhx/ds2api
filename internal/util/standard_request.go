@@ -1,20 +1,26 @@
 package util
 
+import "strings"
+
 type StandardRequest struct {
-	Surface        string
-	RequestedModel string
-	ResolvedModel  string
-	ResponseModel  string
-	ModelType      any
-	Messages       []any
-	ToolsRaw       any
-	FinalPrompt    string
-	ToolNames      []string
-	ToolChoice     ToolChoicePolicy
-	Stream         bool
-	Thinking       bool
-	Search         bool
-	PassThrough    map[string]any
+	Surface                 string
+	RequestedModel          string
+	ResolvedModel           string
+	ResponseModel           string
+	ModelType               any
+	Messages                []any
+	HistoryText             string
+	PromptTokenText         string
+	CurrentInputFileApplied bool
+	ToolsRaw                any
+	FinalPrompt             string
+	ToolNames               []string
+	ToolChoice              ToolChoicePolicy
+	Stream                  bool
+	Thinking                bool
+	Search                  bool
+	RefFileIDs              []string
+	PassThrough             map[string]any
 }
 
 type ToolChoiceMode string
@@ -53,12 +59,23 @@ func (p ToolChoicePolicy) Allows(name string) bool {
 }
 
 func (r StandardRequest) CompletionPayload(sessionID string) map[string]any {
+	refFileIDs := make([]any, 0, len(r.RefFileIDs))
+	for _, fileID := range r.RefFileIDs {
+		fileID = strings.TrimSpace(fileID)
+		if fileID == "" {
+			continue
+		}
+		refFileIDs = append(refFileIDs, fileID)
+	}
+	if len(refFileIDs) == 0 {
+		refFileIDs = []any{}
+	}
 	payload := map[string]any{
 		"chat_session_id":   sessionID,
 		"parent_message_id": nil,
 		"model_type":        r.ModelType,
 		"prompt":            r.FinalPrompt,
-		"ref_file_ids":      []any{},
+		"ref_file_ids":      refFileIDs,
 		"thinking_enabled":  r.Thinking,
 		"search_enabled":    r.Search,
 	}

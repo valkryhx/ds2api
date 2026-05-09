@@ -337,6 +337,31 @@ func TestHandleStreamCanonicalizesCodexToolNameToDeclaredFunctionsNamespace(t *t
 	}
 }
 
+func TestHandleStreamHintInputExceedsLimitEmitsErrorFrame(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`event: hint`,
+		`data: {"type":"error","content":"内容超长，请删减后再试","clear_response":true,"finish_reason":"input_exceeds_limit"}`,
+		`event: close`,
+		`data: {"click_behavior":"none","auto_resume":false}`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid-input-limit", "deepseek-chat", "prompt", false, false, nil)
+
+	body := rec.Body.String()
+	if !strings.Contains(body, `"code":"input_exceeds_limit"`) {
+		t.Fatalf("expected input_exceeds_limit error frame, body=%s", body)
+	}
+	if !strings.Contains(body, "内容超长，请删减后再试") {
+		t.Fatalf("expected upstream error message, body=%s", body)
+	}
+	if !strings.Contains(body, `data: [DONE]`) {
+		t.Fatalf("expected stream to close with [DONE], body=%s", body)
+	}
+}
+
 func TestHandleNonStreamUnknownToolIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

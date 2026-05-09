@@ -79,6 +79,21 @@ func (s *Store) EmbeddingsProvider() string {
 	return strings.TrimSpace(s.cfg.Embeddings.Provider)
 }
 
+func (s *Store) CurrentInputFileEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cfg.CurrentInputFile.Enabled == nil {
+		return true
+	}
+	return *s.cfg.CurrentInputFile.Enabled
+}
+
+func (s *Store) CurrentInputFileMinChars() int {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return s.cfg.CurrentInputFile.MinChars
+}
+
 func (s *Store) DevCaptureSettings() devcapture.Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

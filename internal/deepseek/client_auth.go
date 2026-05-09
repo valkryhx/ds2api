@@ -108,13 +108,21 @@ func extractSessionIDFromCreateSessionResponse(resp map[string]any) string {
 }
 
 func (c *Client) GetPow(ctx context.Context, a *auth.RequestAuth, maxAttempts int) (string, error) {
+	return c.GetPowForTarget(ctx, a, DeepSeekCompletionTargetPath, maxAttempts)
+}
+
+func (c *Client) GetPowForTarget(ctx context.Context, a *auth.RequestAuth, targetPath string, maxAttempts int) (string, error) {
+	targetPath = strings.TrimSpace(targetPath)
+	if targetPath == "" {
+		targetPath = DeepSeekCompletionTargetPath
+	}
 	if maxAttempts <= 0 {
 		maxAttempts = c.maxRetries
 	}
 	attempts := 0
 	for attempts < maxAttempts {
 		headers := c.authHeaders(a.DeepSeekToken)
-		resp, status, err := c.postJSONWithStatus(ctx, c.regular, DeepSeekCreatePowURL, headers, map[string]any{"target_path": "/api/v0/chat/completion"})
+		resp, status, err := c.postJSONWithStatus(ctx, c.regular, DeepSeekCreatePowURL, headers, map[string]any{"target_path": targetPath})
 		if err != nil {
 			config.Logger.Warn("[get_pow] request error", "error", err, "account", a.AccountID)
 			attempts++

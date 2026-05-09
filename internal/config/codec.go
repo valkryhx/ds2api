@@ -47,6 +47,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if strings.TrimSpace(c.Embeddings.Provider) != "" {
 		m["embeddings"] = c.Embeddings
 	}
+	if c.CurrentInputFile.Enabled != nil || c.CurrentInputFile.MinChars != 0 {
+		m["current_input_file"] = c.CurrentInputFile
+	}
 	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 || c.DevCapture.PersistToDisk != nil || strings.TrimSpace(c.DevCapture.OutputDir) != "" {
 		m["dev_capture"] = c.DevCapture
 	}
@@ -111,6 +114,10 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 			if err := json.Unmarshal(v, &c.Embeddings); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
 			}
+		case "current_input_file":
+			if err := json.Unmarshal(v, &c.CurrentInputFile); err != nil {
+				return fmt.Errorf("invalid field %q: %w", k, err)
+			}
 		case "dev_capture":
 			if err := json.Unmarshal(v, &c.DevCapture); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
@@ -148,6 +155,10 @@ func (c Config) Clone() Config {
 		Toolcall:   c.Toolcall,
 		Responses:  c.Responses,
 		Embeddings: c.Embeddings,
+		CurrentInputFile: CurrentInputFileConfig{
+			Enabled:  cloneBoolPtr(c.CurrentInputFile.Enabled),
+			MinChars: c.CurrentInputFile.MinChars,
+		},
 		DevCapture: DevCaptureConfig{
 			Enabled:       cloneBoolPtr(c.DevCapture.Enabled),
 			Limit:         c.DevCapture.Limit,

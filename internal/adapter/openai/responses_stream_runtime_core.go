@@ -51,6 +51,8 @@ type responsesStreamRuntime struct {
 	messagePartAdded  bool
 	sequence          int
 	failed            bool
+	upstreamErr       string
+	upstreamErrCode   string
 
 	persistResponse func(obj map[string]any)
 }
@@ -100,6 +102,35 @@ func newResponsesStreamRuntime(
 }
 
 func (s *responsesStreamRuntime) finalize() {
+	if strings.TrimSpace(s.upstreamErr) != "" {
+		s.failed = true
+		code := strings.TrimSpace(s.upstreamErrCode)
+		if code == "" {
+			code = "upstream_error"
+		}
+		failedResp := map[string]any{
+			"id":          s.responseID,
+			"type":        "response",
+			"object":      "response",
+			"model":       s.model,
+			"status":      "failed",
+			"output":      []any{},
+			"output_text": "",
+			"error": map[string]any{
+				"message": s.upstreamErr,
+				"type":    "invalid_request_error",
+				"code":    code,
+				"param":   nil,
+			},
+		}
+		if s.persistResponse != nil {
+			s.persistResponse(failedResp)
+		}
+		s.sendEvent("response.failed", openaifmt.BuildResponsesFailedPayload(s.responseID, s.model, s.upstreamErr, code))
+		s.sendDone()
+		return
+	}
+
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()
 
@@ -210,6 +241,10 @@ func (s *responsesStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Pa
 		return streamengine.ParsedDecision{}
 	}
 	if parsed.ContentFilter || parsed.ErrorMessage != "" || parsed.Stop {
+		if strings.TrimSpace(parsed.ErrorMessage) != "" {
+			s.upstreamErr = parsed.ErrorMessage
+			s.upstreamErrCode = parsed.ErrorCode
+		}
 		return streamengine.ParsedDecision{Stop: true}
 	}
 

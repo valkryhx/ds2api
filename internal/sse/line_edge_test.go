@@ -45,6 +45,19 @@ func TestParseDeepSeekContentLineContentFilterMessage(t *testing.T) {
 	}
 }
 
+func TestParseDeepSeekContentLineHintInputExceedsLimit(t *testing.T) {
+	res := ParseDeepSeekContentLine([]byte(`data: {"type":"error","content":"内容超长，请删减后再试","clear_response":true,"finish_reason":"input_exceeds_limit"}`), false, "text")
+	if !res.Parsed || !res.Stop {
+		t.Fatalf("expected parsed stop: %#v", res)
+	}
+	if res.ErrorCode != "input_exceeds_limit" {
+		t.Fatalf("expected input_exceeds_limit code, got %q", res.ErrorCode)
+	}
+	if res.ErrorMessage != "内容超长，请删减后再试" {
+		t.Fatalf("unexpected error message: %q", res.ErrorMessage)
+	}
+}
+
 func TestParseDeepSeekContentLineErrorObjectFormat(t *testing.T) {
 	res := ParseDeepSeekContentLine([]byte(`data: {"error":{"message":"rate limit","code":429}}`), false, "text")
 	if !res.Parsed || !res.Stop {

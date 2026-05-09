@@ -76,6 +76,12 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	stdReq, err = h.applyCurrentInputFile(r.Context(), a, stdReq)
+	if err != nil {
+		status, message := mapCurrentInputFileError(err)
+		writeOpenAIError(w, status, message)
+		return
+	}
 
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {
@@ -100,10 +106,10 @@ func (h *Handler) Responses(w http.ResponseWriter, r *http.Request) {
 
 	responseID := "resp_" + strings.ReplaceAll(uuid.NewString(), "-", "")
 	if stdReq.Stream {
-		h.handleResponsesStream(w, r, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
+		h.handleResponsesStream(w, r, resp, owner, responseID, stdReq.ResponseModel, stdReq.PromptTokenText, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
 		return
 	}
-	h.handleResponsesNonStream(w, resp, owner, responseID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
+	h.handleResponsesNonStream(w, resp, owner, responseID, stdReq.ResponseModel, stdReq.PromptTokenText, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolChoice, traceID, stdReq.ToolsRaw)
 }
 
 func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Response, owner, responseID, model, finalPrompt string, thinkingEnabled bool, toolNames []string, toolChoice util.ToolChoicePolicy, traceID string, toolsRaw ...any) {
@@ -114,6 +120,14 @@ func (h *Handler) handleResponsesNonStream(w http.ResponseWriter, resp *http.Res
 		return
 	}
 	result := sse.CollectStream(resp, thinkingEnabled, true)
+	if result.ErrorMessage != "" {
+		status := http.StatusBadGateway
+		if result.ErrorCode == "input_exceeds_limit" {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeOpenAIErrorWithCode(w, status, result.ErrorMessage, result.ErrorCode)
+		return
+	}
 	parseToolNames := util.PermissiveToolParseNames(toolNames)
 	if toolChoice.IsNone() {
 		parseToolNames = util.ToolChoiceNoneBlockParseNames()

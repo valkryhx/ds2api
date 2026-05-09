@@ -82,6 +82,25 @@ func TestCollectStreamSkipsInvalidLines(t *testing.T) {
 	}
 }
 
+func TestCollectStreamCarriesHintInputExceedsLimitError(t *testing.T) {
+	resp := makeHTTPResponse(
+		"event: hint\n" +
+			`data: {"type":"error","content":"内容超长，请删减后再试","clear_response":true,"finish_reason":"input_exceeds_limit"}` + "\n" +
+			"event: close\n" +
+			`data: {"click_behavior":"none","auto_resume":false}` + "\n",
+	)
+	result := CollectStream(resp, false, false)
+	if result.ErrorCode != "input_exceeds_limit" {
+		t.Fatalf("expected input_exceeds_limit, got %q", result.ErrorCode)
+	}
+	if result.ErrorMessage != "内容超长，请删减后再试" {
+		t.Fatalf("unexpected error message: %q", result.ErrorMessage)
+	}
+	if result.Text != "" || result.Thinking != "" {
+		t.Fatalf("expected empty content after upstream error, got text=%q thinking=%q", result.Text, result.Thinking)
+	}
+}
+
 func TestCollectStreamWithFragments(t *testing.T) {
 	resp := makeHTTPResponse(
 		"data: {\"p\":\"response/fragments\",\"o\":\"APPEND\",\"v\":[{\"type\":\"THINK\",\"content\":\"Think\"}]}\n" +

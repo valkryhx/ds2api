@@ -13,6 +13,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 
 	"ds2api/internal/auth"
+	"ds2api/internal/deepseek"
 	"ds2api/internal/devcapture"
 )
 
@@ -48,6 +49,10 @@ func (m streamStatusDSStub) CreateSession(_ context.Context, _ *auth.RequestAuth
 
 func (m streamStatusDSStub) GetPow(_ context.Context, _ *auth.RequestAuth, _ int) (string, error) {
 	return "pow", nil
+}
+
+func (m streamStatusDSStub) UploadFile(_ context.Context, _ *auth.RequestAuth, _ deepseek.UploadFileRequest, _ int) (*deepseek.UploadFileResult, error) {
+	return &deepseek.UploadFileResult{ID: "file-stub", Status: "processed"}, nil
 }
 
 func (m streamStatusDSStub) CallCompletion(_ context.Context, _ *auth.RequestAuth, _ map[string]any, _ string, _ int) (*http.Response, error) {

@@ -51,6 +51,12 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		writeOpenAIError(w, http.StatusBadRequest, err.Error())
 		return
 	}
+	stdReq, err = h.applyCurrentInputFile(r.Context(), a, stdReq)
+	if err != nil {
+		status, message := mapCurrentInputFileError(err)
+		writeOpenAIError(w, status, message)
+		return
+	}
 
 	sessionID, err := h.DS.CreateSession(r.Context(), a, 3)
 	if err != nil {
@@ -73,10 +79,10 @@ func (h *Handler) ChatCompletions(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if stdReq.Stream {
-		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw)
+		h.handleStream(w, r, resp, sessionID, stdReq.ResponseModel, stdReq.PromptTokenText, stdReq.Thinking, stdReq.Search, stdReq.ToolNames, stdReq.ToolsRaw)
 		return
 	}
-	h.handleNonStream(w, r.Context(), resp, sessionID, stdReq.ResponseModel, stdReq.FinalPrompt, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolsRaw)
+	h.handleNonStream(w, r.Context(), resp, sessionID, stdReq.ResponseModel, stdReq.PromptTokenText, stdReq.Thinking, stdReq.ToolNames, stdReq.ToolsRaw)
 }
 
 func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled bool, toolNames []string, toolsRaw ...any) {
@@ -88,6 +94,14 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 	}
 	_ = ctx
 	result := sse.CollectStream(resp, thinkingEnabled, true)
+	if result.ErrorMessage != "" {
+		status := http.StatusBadGateway
+		if result.ErrorCode == "input_exceeds_limit" {
+			status = http.StatusRequestEntityTooLarge
+		}
+		writeOpenAIErrorWithCode(w, status, result.ErrorMessage, result.ErrorCode)
+		return
+	}
 
 	finalThinking := result.Thinking
 	finalText := result.Text
@@ -182,6 +196,10 @@ func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *htt
 		OnFinalize: func(reason streamengine.StopReason, _ error) {
 			if string(reason) == "content_filter" {
 				streamRuntime.finalize("content_filter")
+				return
+			}
+			if string(reason) == "input_exceeds_limit" {
+				streamRuntime.finalize("length")
 				return
 			}
 			streamRuntime.finalize("stop")
