@@ -68,6 +68,7 @@ flowchart LR
 | 并发队列控制 | 每账号 in-flight 上限 + 等待队列，动态计算建议并发值 |
 | DeepSeek PoW | WASM 计算（`wazero`），无需外部 Node.js 依赖 |
 | Tool Calling | 防泄漏处理：非代码块高置信特征识别、`delta.tool_calls` 早发、结构化增量输出 |
+| 长上下文续接 | OpenAI chat/responses 可自动上传 `DS2API_HISTORY.txt` 并缩短实时 prompt，缓解 DeepSeek `input_exceeds_limit` |
 | Admin API | 配置管理、运行时设置热更新、账号测试 / 批量测试、导入导出、Vercel 同步 |
 | WebUI 管理台 | `/admin` 单页应用（中英文双语、深色模式） |
 | 运维探针 | `GET /healthz`（存活）、`GET /readyz`（就绪） |
@@ -270,6 +271,10 @@ cp opencode.json.example opencode.json
   "responses": {
     "store_ttl_seconds": 900
   },
+  "current_input_file": {
+    "enabled": true,
+    "min_chars": 0
+  },
   "embeddings": {
     "provider": "deterministic"
   },
@@ -295,6 +300,7 @@ cp opencode.json.example opencode.json
 - `compat.wide_input_strict_output`：建议保持 `true`（当前实现默认宽进严出）
 - `toolcall`：固定采用特征匹配 + 高置信早发策略
 - `responses.store_ttl_seconds`：`/v1/responses/{id}` 的内存缓存 TTL
+- `current_input_file`：OpenAI chat/responses 长上下文文件续接配置。`enabled` 默认 `true`；`min_chars` 按最新一条 user 消息的 Unicode 字符数触发，默认 `0` 表示非空 user 输入都会上传历史文件
 - `embeddings.provider`：embedding 提供方（当前内置 `deterministic/mock/builtin`）
 - `claude_model_mapping`：字典中 `fast`/`slow` 后缀映射到对应 DeepSeek 模型
 - `admin`：管理后台设置（JWT 过期时间、密码哈希等），可通过 Admin Settings API 热更新
@@ -354,6 +360,33 @@ cp opencode.json.example opencode.json
 - 超出总承载上限后才返回 `429 Too Many Requests`
 - `GET /admin/queue/status` 返回实时并发状态
 
+## 长上下文文件续接
+
+OpenAI 兼容的 `/v1/chat/completions` 与 `/v1/responses` 支持长上下文文件续接。触发后，DS2API 会把当前请求中的完整消息历史整理为 `DS2API_HISTORY.txt` 上传到 DeepSeek，并将实时 prompt 缩短为继续指令：
+
+```text
+Continue from the latest state in the attached DS2API_HISTORY.txt context. Treat it as the current working state and answer the latest user request directly.
+```
+
+这样可以避免把超长历史继续塞进当前 prompt，降低 DeepSeek 返回 `input_exceeds_limit` 后客户端长时间等待的概率。
+
+触发条件由 `current_input_file` 控制：
+
+```json
+{
+  "current_input_file": {
+    "enabled": true,
+    "min_chars": 0
+  }
+}
+```
+
+- `enabled`：是否启用文件续接；未配置时默认启用
+- `min_chars`：按“最新一条 user 消息”的 Unicode 字符数判断是否触发；不是 token 阈值
+- 默认 `min_chars=0`，因此最新 user 消息非空时就会上传一版新的 `DS2API_HISTORY.txt`
+- 每轮触发都会上传一版包含最新历史的文件，并通过 DeepSeek `ref_file_ids` 引用；不会在本地维护可复用的固定历史文件路径
+- usage 中的 token 数仍是本地估算值：ASCII 约 4 字符 1 token，非 ASCII 约 1.3 字符 1 token
+
 ## Tool Call 适配
 
 当请求中带 `tools` 时，DS2API 会做防泄漏处理：
@@ -363,6 +396,7 @@ cp opencode.json.example opencode.json
 3. 未在 `tools` 声明中的工具名会被严格拒绝，不会下发为有效 tool call
 4. `responses` 支持并执行 `tool_choice`（`auto`/`none`/`required`/强制函数）；`required` 违规时非流式返回 `422`，流式返回 `response.failed`
 5. 仅在通过策略校验后才会发出有效工具调用事件，避免错误工具名进入客户端执行链
+6. 已同步 PR331 方向的工具调用链路增强：统一支持 DSML/XML/invoke 多格式解析与流式筛流修复，重点优化 deepseek-v4-pro 场景下的空 toolcall 与误泄漏问题
 
 ## 本地开发抓包工具
 
