@@ -183,6 +183,34 @@ func TestParseStandaloneToolCallsSupportsToolUseLabelStyle(t *testing.T) {
 	}
 }
 
+func TestParseStandaloneToolCallsSupportsActionInputStyle(t *testing.T) {
+	text := "Action: Write\nAction Input: {\"file_path\":\"342.md\",\"content\":\"hello\"}"
+	calls := ParseStandaloneToolCalls(text, []string{"Write"})
+	if len(calls) != 1 {
+		t.Fatalf("expected action/input style to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "Write" {
+		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != "342.md" {
+		t.Fatalf("unexpected file_path arg: %#v", calls[0].Input)
+	}
+}
+
+func TestParseStandaloneToolCallsSupportsCallingStyle(t *testing.T) {
+	text := "我来查看这个文件的内容。\nCalling: Read\n{\"file_path\":\"d:\\\\git_codes\\\\ds2api\\\\专家.md\"}"
+	calls := ParseStandaloneToolCalls(text, []string{"Read"})
+	if len(calls) != 1 {
+		t.Fatalf("expected calling style to be parsed, got %#v", calls)
+	}
+	if calls[0].Name != "Read" {
+		t.Fatalf("unexpected tool name: %#v", calls[0].Name)
+	}
+	if calls[0].Input["file_path"] != `d:\git_codes\ds2api\专家.md` {
+		t.Fatalf("unexpected file_path arg: %#v", calls[0].Input)
+	}
+}
+
 func TestParseStandaloneToolCallsIgnoresAlreadyCalledMCPHistoryWhenAllowListMissing(t *testing.T) {
 	text := `[TOOL_CALL_HISTORY]
 status: already_called
@@ -837,6 +865,22 @@ Hermes Agent 和煎饼。
 	}
 	if calls[0].Input["file_path"] != `D:\git_codes\ds2api\1231.md` {
 		t.Fatalf("expected file_path to be preserved, got %#v", calls[0].Input)
+	}
+}
+
+func TestParseToolCallsKeepsCompleteInvokeWithMalformedDSMLInvokeClose(t *testing.T) {
+	text := `<|DSML|tool_calls>
+<|DSML|invoke name="Bash">
+<|DSML|parameter name="command"><![CDATA[df -h /mnt/d 2>/dev/null || df -h /d 2>/dev/null]]></|DSML|parameter>
+</|DSDSML|invoke>
+</|DSML|tool_calls>`
+
+	calls := NormalizeToolCallInputsForExecution(ParseToolCalls(text, []string{"Bash"}))
+	if len(calls) != 1 {
+		t.Fatalf("expected one complete Bash invoke despite malformed invoke close, got %#v", calls)
+	}
+	if calls[0].Input["command"] != `df -h /mnt/d 2>/dev/null || df -h /d 2>/dev/null` {
+		t.Fatalf("expected command to be preserved, got %#v", calls[0].Input)
 	}
 }
 

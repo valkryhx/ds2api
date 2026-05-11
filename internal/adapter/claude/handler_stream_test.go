@@ -329,6 +329,50 @@ func asString(v any) string {
 	return s
 }
 
+func asInt(v any) int {
+	switch x := v.(type) {
+	case float64:
+		return int(x)
+	case int:
+		return x
+	default:
+		return 0
+	}
+}
+
+func findClaudeToolUseInputByName(t *testing.T, frames []claudeFrame, toolName string) map[string]any {
+	t.Helper()
+	indexForTool := -1
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" && contentBlock["name"] == toolName {
+			indexForTool = asInt(f.Payload["index"])
+			break
+		}
+	}
+	if indexForTool < 0 {
+		return nil
+	}
+	partialJSON := strings.Builder{}
+	for _, f := range findClaudeFrames(frames, "content_block_delta") {
+		if asInt(f.Payload["index"]) != indexForTool {
+			continue
+		}
+		delta, _ := f.Payload["delta"].(map[string]any)
+		if delta["type"] == "input_json_delta" {
+			partialJSON.WriteString(asString(delta["partial_json"]))
+		}
+	}
+	if partialJSON.Len() == 0 {
+		return nil
+	}
+	var out map[string]any
+	if err := json.Unmarshal([]byte(partialJSON.String()), &out); err != nil {
+		t.Fatalf("decode input_json_delta failed: %v, payload=%s", err, partialJSON.String())
+	}
+	return out
+}
+
 func TestHandleClaudeStreamRealtimeToolSafetyAcrossStructuredFormats(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -530,14 +574,7 @@ func TestHandleClaudeStreamRealtimeExecutesLaterValidWriteAfterMalformedDSMLWrap
 	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "write file"}}, false, false, []string{"mcp__exa__web_search_exa", "Write"}, toolsRaw)
 
 	frames := parseClaudeFrames(t, rec.Body.String())
-	var writeInput map[string]any
-	for _, f := range findClaudeFrames(frames, "content_block_start") {
-		contentBlock, _ := f.Payload["content_block"].(map[string]any)
-		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Write" {
-			writeInput, _ = contentBlock["input"].(map[string]any)
-			break
-		}
-	}
+	writeInput := findClaudeToolUseInputByName(t, frames, "Write")
 	if writeInput == nil {
 		t.Fatalf("expected Write tool_use block, body=%s", rec.Body.String())
 	}
@@ -594,18 +631,86 @@ Hermes Agent 和煎饼。
 	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "write file"}}, false, false, []string{"Write"}, toolsRaw)
 
 	frames := parseClaudeFrames(t, rec.Body.String())
-	var writeInput map[string]any
-	for _, f := range findClaudeFrames(frames, "content_block_start") {
-		contentBlock, _ := f.Payload["content_block"].(map[string]any)
-		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Write" {
-			writeInput, _ = contentBlock["input"].(map[string]any)
-			break
-		}
-	}
+	writeInput := findClaudeToolUseInputByName(t, frames, "Write")
 	if writeInput == nil {
 		t.Fatalf("expected Write tool_use block for malformed DSML close, body=%s", rec.Body.String())
 	}
 	if writeInput["file_path"] != `D:\git_codes\ds2api\1231.md` {
 		t.Fatalf("expected absolute file_path to be preserved, got %#v", writeInput)
+	}
+}
+
+func TestHandleClaudeStreamRealtimeExecutesCompleteBashWithMalformedInvokeClose(t *testing.T) {
+	h := &Handler{}
+	text := `<|DSML|tool_calls>
+<|DSML|invoke name="Bash">
+<|DSML|parameter name="command"><![CDATA[df -h /mnt/d 2>/dev/null || df -h /d 2>/dev/null]]></|DSML|parameter>
+</|DSDSML|invoke>
+</|DSML|tool_calls>`
+	resp := makeClaudeSSEHTTPResponse(
+		makeDeepSeekContentLine(t, text),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+	toolsRaw := []any{map[string]any{
+		"name": "Bash",
+		"input_schema": map[string]any{
+			"type":     "object",
+			"required": []any{"command"},
+			"properties": map[string]any{
+				"command":     map[string]any{"type": "string"},
+				"description": map[string]any{"type": "string"},
+			},
+		},
+	}}
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", []any{map[string]any{"role": "user", "content": "check disk"}}, false, false, []string{"Bash"}, toolsRaw)
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	bashInput := findClaudeToolUseInputByName(t, frames, "Bash")
+	if bashInput == nil {
+		t.Fatalf("expected Bash tool_use block for malformed invoke close, body=%s", rec.Body.String())
+	}
+	if bashInput["command"] != `df -h /mnt/d 2>/dev/null || df -h /d 2>/dev/null` {
+		t.Fatalf("expected Bash command to be preserved, got %#v", bashInput)
+	}
+}
+
+func TestHandleClaudeStreamRealtimeUsesDeferredToolNamesFromMessageContent(t *testing.T) {
+	h := &Handler{}
+	resp := makeClaudeSSEHTTPResponse(
+		makeDeepSeekContentLine(t, `<|DSML|tool_calls><|DSML|invoke name="Bash"><|DSML|parameter name="command"><![CDATA[powershell -Command "Get-PSDrive D | Select-Object Used,Free | Format-List"]]></|DSML|parameter><|DSML|parameter name="description"><![CDATA[Check D drive]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`),
+		`data: [DONE]`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/anthropic/v1/messages", nil)
+	messages := []any{
+		map[string]any{
+			"role":    "user",
+			"content": "<available-deferred-tools>\nBash\nRead\nWrite\n</available-deferred-tools>\n你调用bash 看看当前D盘大小",
+		},
+	}
+
+	h.handleClaudeStreamRealtime(rec, req, resp, "claude-sonnet-4-5", messages, false, false, []string{"ToolSearch"}, nil)
+
+	frames := parseClaudeFrames(t, rec.Body.String())
+	foundToolUse := false
+	for _, f := range findClaudeFrames(frames, "content_block_start") {
+		contentBlock, _ := f.Payload["content_block"].(map[string]any)
+		if contentBlock["type"] == "tool_use" && contentBlock["name"] == "Bash" {
+			foundToolUse = true
+			break
+		}
+	}
+	if !foundToolUse {
+		t.Fatalf("expected Bash tool_use from deferred tools, body=%s", rec.Body.String())
+	}
+	bashInput := findClaudeToolUseInputByName(t, frames, "Bash")
+	if bashInput == nil {
+		t.Fatalf("expected Bash input_json_delta, body=%s", rec.Body.String())
+	}
+	if bashInput["command"] != `powershell -Command "Get-PSDrive D | Select-Object Used,Free | Format-List"` {
+		t.Fatalf("unexpected Bash command payload: %#v", bashInput)
 	}
 }

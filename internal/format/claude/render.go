@@ -9,7 +9,9 @@ import (
 )
 
 func DetectClaudeToolCalls(finalText, finalThinking string, toolNames []string) util.ToolCallParseResult {
-	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, toolNames)
+	parseToolNames := util.PermissiveToolParseNames(toolNames)
+	textParsed := util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
+	textParsed.Calls = util.CanonicalizeParsedToolCallNames(textParsed.Calls, toolNames)
 	if len(textParsed.Calls) > 0 {
 		return textParsed
 	}
@@ -21,7 +23,8 @@ func DetectClaudeToolCalls(finalText, finalThinking string, toolNames []string) 
 	if strings.TrimSpace(finalThinking) == "" {
 		return textParsed
 	}
-	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, toolNames)
+	thinkingParsed := util.ParseStandaloneToolCallsDetailed(finalThinking, parseToolNames)
+	thinkingParsed.Calls = util.CanonicalizeParsedToolCallNames(thinkingParsed.Calls, toolNames)
 	if len(thinkingParsed.Calls) > 0 {
 		return thinkingParsed
 	}

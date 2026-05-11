@@ -8,6 +8,8 @@ import (
 var textKVNamePattern = regexp.MustCompile(`(?is)function\.name:\s*([a-zA-Z0-9_\-.]+)`)
 var callMarkerPattern = regexp.MustCompile(`(?is)\[\s*(?:调用|call)\s+([a-zA-Z0-9_\-.]+)\s*\]`)
 var toolUseLabelPattern = regexp.MustCompile(`(?is)^\s*(?:tool\s*use|tool\s*call|调用工具)\s*:\s*(.*)$`)
+var actionInputPattern = regexp.MustCompile(`(?is)\bAction\s*:\s*([a-zA-Z0-9_\-.]+)\s*\r?\n\s*Action\s+Input\s*:\s*(\{.*\})\s*$`)
+var callingJSONPattern = regexp.MustCompile(`(?is)\bCalling\s*:\s*([a-zA-Z0-9_\-.]+)\s*\r?\n\s*(\{.*\})\s*$`)
 var directParenCallNamePattern = regexp.MustCompile(`^[a-zA-Z][a-zA-Z0-9_\-.]*$`)
 var toolCallHistoryBlockPattern = regexp.MustCompile(`(?is)\[TOOL_CALL_HISTORY\](.*?)\[/TOOL_CALL_HISTORY\]`)
 var toolResultHistoryBlockPattern = regexp.MustCompile(`(?is)\[TOOL_RESULT_HISTORY\](.*?)\[/TOOL_RESULT_HISTORY\]`)
@@ -19,6 +21,12 @@ func parseTextKVToolCalls(text string) []ParsedToolCall {
 		return calls
 	}
 	if calls := parseCallMarkerStyleToolCalls(text); len(calls) > 0 {
+		return calls
+	}
+	if calls := parseActionInputStyleToolCalls(text); len(calls) > 0 {
+		return calls
+	}
+	if calls := parseCallingStyleToolCalls(text); len(calls) > 0 {
 		return calls
 	}
 	if calls := parseDirectParenStyleToolCalls(text); len(calls) > 0 {
@@ -140,6 +148,30 @@ func parseCallMarkerStyleToolCalls(text string) []ParsedToolCall {
 		return nil
 	}
 	return out
+}
+
+func parseActionInputStyleToolCalls(text string) []ParsedToolCall {
+	m := actionInputPattern.FindStringSubmatch(strings.TrimSpace(text))
+	if len(m) < 3 {
+		return nil
+	}
+	name := strings.TrimSpace(m[1])
+	if name == "" {
+		return nil
+	}
+	return []ParsedToolCall{{Name: name, Input: parseToolCallInput(m[2])}}
+}
+
+func parseCallingStyleToolCalls(text string) []ParsedToolCall {
+	m := callingJSONPattern.FindStringSubmatch(strings.TrimSpace(text))
+	if len(m) < 3 {
+		return nil
+	}
+	name := strings.TrimSpace(m[1])
+	if name == "" {
+		return nil
+	}
+	return []ParsedToolCall{{Name: name, Input: parseToolCallInput(m[2])}}
 }
 
 func parseDirectParenStyleToolCalls(text string) []ParsedToolCall {

@@ -1,6 +1,7 @@
 package claude
 
 import (
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -50,10 +51,13 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 		detected := []util.ParsedToolCall(nil)
 		textParsed := util.ToolCallParseResult{}
 		thinkingParsed := util.ToolCallParseResult{}
-		textParsed = util.ParseToolCallsDetailed(finalText, s.toolNames)
+		parseToolNames := util.PermissiveToolParseNames(s.toolNames)
+		textParsed = util.ParseStandaloneToolCallsDetailed(finalText, parseToolNames)
+		textParsed.Calls = util.CanonicalizeParsedToolCallNames(textParsed.Calls, s.toolNames)
 		detected = s.prepareToolCallsForExecution(textParsed.Calls)
 		if len(detected) == 0 && finalText == "" && rawThinking != "" {
-			thinkingParsed = util.ParseToolCallsDetailed(rawThinking, s.toolNames)
+			thinkingParsed = util.ParseStandaloneToolCallsDetailed(rawThinking, parseToolNames)
+			thinkingParsed.Calls = util.CanonicalizeParsedToolCallNames(thinkingParsed.Calls, s.toolNames)
 			detected = s.prepareToolCallsForExecution(thinkingParsed.Calls)
 		}
 		s.logToolCallDebug(stopReason, textParsed, thinkingParsed)
@@ -62,6 +66,7 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 			for i, tc := range detected {
 				recordClaudeStreamToolUse(tc, stopReason, s.toolNames)
 				idx := s.nextBlockIndex + i
+				inputJSON, _ := json.Marshal(tc.Input)
 				s.send("content_block_start", map[string]any{
 					"type":  "content_block_start",
 					"index": idx,
@@ -69,9 +74,19 @@ func (s *claudeStreamRuntime) finalize(stopReason string) {
 						"type":  "tool_use",
 						"id":    fmt.Sprintf("toolu_%d_%d", time.Now().Unix(), idx),
 						"name":  tc.Name,
-						"input": tc.Input,
+						"input": map[string]any{},
 					},
 				})
+				if len(inputJSON) > 0 && string(inputJSON) != "{}" {
+					s.send("content_block_delta", map[string]any{
+						"type":  "content_block_delta",
+						"index": idx,
+						"delta": map[string]any{
+							"type":         "input_json_delta",
+							"partial_json": string(inputJSON),
+						},
+					})
+				}
 				s.send("content_block_stop", map[string]any{
 					"type":  "content_block_stop",
 					"index": idx,

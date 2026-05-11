@@ -28,6 +28,10 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 	payload["messages"] = normalizedMessages
 	toolsRequested, _ := req["tools"].([]any)
 	payload["messages"] = injectClaudeToolPrompt(payload, normalizedMessages, toolsRequested)
+	deferredToolNames := extractClaudeDeferredToolNames(normalizedMessages)
+	if deferredPrompt := strings.TrimSpace(buildClaudeDeferredToolPrompt(deferredToolNames)); deferredPrompt != "" {
+		payload["messages"] = injectClaudeSystemPrompt(payload, payload["messages"].([]any), deferredPrompt)
+	}
 
 	dsPayload := convertClaudeToDeepSeek(payload, store)
 	dsModel, _ := dsPayload["model"].(string)
@@ -38,7 +42,7 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 		searchEnabled = false
 	}
 	finalPrompt := deepseek.MessagesPrepare(toMessageMaps(dsPayload["messages"]))
-	toolNames := extractClaudeToolNames(toolsRequested)
+	toolNames := mergeClaudeToolNames(extractClaudeToolNames(toolsRequested), deferredToolNames)
 
 	return claudeNormalizedRequest{
 		Standard: util.StandardRequest{
@@ -59,21 +63,15 @@ func normalizeClaudeRequest(store ConfigReader, req map[string]any) (claudeNorma
 	}, nil
 }
 
-func injectClaudeToolPrompt(payload map[string]any, normalizedMessages []any, tools []any) []any {
-	if len(tools) == 0 {
+func injectClaudeSystemPrompt(payload map[string]any, normalizedMessages []any, prompt string) []any {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
 		return normalizedMessages
 	}
-	toolPrompt := strings.TrimSpace(buildClaudeToolPrompt(tools))
-	if toolPrompt == "" {
-		return normalizedMessages
-	}
-
-	// Prefer top-level Anthropic-style system prompt when available.
 	if systemText, ok := payload["system"].(string); ok && strings.TrimSpace(systemText) != "" {
-		payload["system"] = mergeSystemPrompt(systemText, toolPrompt)
+		payload["system"] = mergeSystemPrompt(systemText, prompt)
 		return normalizedMessages
 	}
-
 	messages := cloneAnySlice(normalizedMessages)
 	for i := range messages {
 		msg, ok := messages[i].(map[string]any)
@@ -85,12 +83,23 @@ func injectClaudeToolPrompt(payload map[string]any, normalizedMessages []any, to
 			continue
 		}
 		copied := cloneMap(msg)
-		copied["content"] = mergeSystemPrompt(strings.TrimSpace(fmt.Sprintf("%v", copied["content"])), toolPrompt)
+		copied["content"] = mergeSystemPrompt(strings.TrimSpace(fmt.Sprintf("%v", copied["content"])), prompt)
 		messages[i] = copied
 		return messages
 	}
+	return append([]any{map[string]any{"role": "system", "content": prompt}}, messages...)
+}
 
-	return append([]any{map[string]any{"role": "system", "content": toolPrompt}}, messages...)
+func injectClaudeToolPrompt(payload map[string]any, normalizedMessages []any, tools []any) []any {
+	if len(tools) == 0 {
+		return normalizedMessages
+	}
+	toolPrompt := strings.TrimSpace(buildClaudeToolPrompt(tools))
+	if toolPrompt == "" {
+		return normalizedMessages
+	}
+
+	return injectClaudeSystemPrompt(payload, normalizedMessages, toolPrompt)
 }
 
 func mergeSystemPrompt(base, extra string) string {

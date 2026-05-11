@@ -127,6 +127,18 @@ func TestBuildMessageResponseDropsToolUseWithEmptyRequiredSchemaField(t *testing
 	}
 }
 
+func TestDetectClaudeToolCallsUndeclaredWriteStillInterceptedWhenOnlyToolSearchDeclared(t *testing.T) {
+	finalText := `<|DSML|tool_calls><|DSML|invoke name="Write"><|DSML|parameter name="file_path"><![CDATA[D:\git_codes\ds2api\e123.md]]></|DSML|parameter><|DSML|parameter name="content"><![CDATA[# translated]]></|DSML|parameter></|DSML|invoke></|DSML|tool_calls>`
+
+	detected := DetectClaudeToolCalls(finalText, "", []string{"ToolSearch"})
+	if len(detected.Calls) != 1 {
+		t.Fatalf("expected undeclared Write to still be intercepted, got %#v", detected)
+	}
+	if detected.Calls[0].Name != "Write" {
+		t.Fatalf("expected Write tool call, got %#v", detected.Calls[0])
+	}
+}
+
 func asString(v any) string {
 	s, _ := v.(string)
 	return s

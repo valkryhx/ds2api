@@ -6,11 +6,21 @@ func normalizeDSMLToolCallMarkup(text string) (string, bool) {
 	if text == "" {
 		return "", true
 	}
+	text = repairKnownMalformedDSMLCloseTags(text)
 	hasAliasLikeMarkup, _ := ContainsToolMarkupSyntaxOutsideIgnored(text)
 	if !hasAliasLikeMarkup {
 		return text, true
 	}
 	return rewriteDSMLToolMarkupOutsideIgnored(text), true
+}
+
+func repairKnownMalformedDSMLCloseTags(text string) string {
+	if text == "" {
+		return ""
+	}
+	text = strings.ReplaceAll(text, "</|DSDSML|invoke>", "</|DSML|invoke>")
+	text = strings.ReplaceAll(text, "</｜DSDSML｜invoke>", "</｜DSML｜invoke>")
+	return text
 }
 
 func rewriteDSMLToolMarkupOutsideIgnored(text string) string {
@@ -55,4 +65,3 @@ func rewriteDSMLToolMarkupOutsideIgnored(text string) string {
 	}
 	return b.String()
 }
-

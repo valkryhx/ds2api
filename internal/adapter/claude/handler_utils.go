@@ -3,8 +3,11 @@ package claude
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
+
+var availableDeferredToolsBlockPattern = regexp.MustCompile(`(?is)<available-deferred-tools>\s*(.*?)\s*</available-deferred-tools>`)
 
 func normalizeClaudeMessages(messages []any) []any {
 	out := make([]any, 0, len(messages))
@@ -76,6 +79,29 @@ func buildClaudeToolPrompt(tools []any) string {
 	return strings.Join(parts, "\n\n")
 }
 
+func buildClaudeDeferredToolPrompt(toolNames []string) string {
+	names := uniqueClaudeToolNames(toolNames)
+	if len(names) == 0 {
+		return ""
+	}
+	parts := []string{
+		"Deferred tool names listed in <available-deferred-tools> are callable tools for this turn. If the user asks for one of those tools, call that tool directly in DSML instead of calling ToolSearch first.",
+		"Common deferred tool parameter hints:",
+	}
+	for _, name := range names {
+		switch strings.ToLower(strings.TrimSpace(name)) {
+		case "read":
+			parts = append(parts, "Read -> file_path")
+		case "write":
+			parts = append(parts, "Write -> file_path, content")
+		case "bash":
+			parts = append(parts, "Bash -> command")
+		}
+	}
+	parts = append(parts, "Never claim that you called, wrote, read, or executed a tool unless you output a valid DSML tool call or have a valid [TOOL_RESULT_HISTORY].")
+	return strings.Join(parts, "\n")
+}
+
 func formatClaudeToolResultForPrompt(block map[string]any) string {
 	if block == nil {
 		return ""
@@ -119,6 +145,58 @@ func extractClaudeToolNames(tools []any) []string {
 		if name != "" {
 			out = append(out, name)
 		}
+	}
+	return out
+}
+
+func extractClaudeDeferredToolNames(messages []any) []string {
+	out := make([]string, 0)
+	for _, item := range messages {
+		msg, ok := item.(map[string]any)
+		if !ok {
+			continue
+		}
+		content := extractMessageContent(msg["content"])
+		for _, m := range availableDeferredToolsBlockPattern.FindAllStringSubmatch(content, -1) {
+			if len(m) < 2 {
+				continue
+			}
+			for _, line := range strings.Split(m[1], "\n") {
+				name := strings.TrimSpace(line)
+				if name == "" || strings.ContainsAny(name, " \t<>") {
+					continue
+				}
+				out = append(out, name)
+			}
+		}
+	}
+	return uniqueClaudeToolNames(out)
+}
+
+func mergeClaudeToolNames(base []string, extra []string) []string {
+	if len(extra) == 0 {
+		return uniqueClaudeToolNames(base)
+	}
+	return uniqueClaudeToolNames(append(append([]string(nil), base...), extra...))
+}
+
+func uniqueClaudeToolNames(names []string) []string {
+	if len(names) == 0 {
+		return nil
+	}
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(names))
+	for _, name := range names {
+		trimmed := strings.TrimSpace(name)
+		if trimmed == "" {
+			continue
+		}
+		key := strings.ToLower(trimmed)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, trimmed)
 	}
 	return out
 }

@@ -52,6 +52,7 @@ func newClaudeStreamRuntime(
 	toolNames []string,
 	toolsRaw any,
 ) *claudeStreamRuntime {
+	toolNames = mergeClaudeToolNames(toolNames, extractClaudeDeferredToolNames(messages))
 	return &claudeStreamRuntime{
 		w:                  w,
 		rc:                 rc,
@@ -169,7 +170,9 @@ func (s *claudeStreamRuntime) onParsed(parsed sse.LineResult) streamengine.Parse
 }
 
 func (s *claudeStreamRuntime) parseToolCallsForExecution(text string) []util.ParsedToolCall {
-	detected := util.ParseToolCalls(text, s.toolNames)
+	parseToolNames := util.PermissiveToolParseNames(s.toolNames)
+	parsed := util.ParseStandaloneToolCallsDetailed(text, parseToolNames)
+	detected := util.CanonicalizeParsedToolCallNames(parsed.Calls, s.toolNames)
 	return s.prepareToolCallsForExecution(detected)
 }
 
