@@ -98,11 +98,12 @@ func (s *Store) DevCaptureSettings() devcapture.Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return devcapture.Settings{
-		Enabled:       s.cfg.DevCapture.Enabled,
-		Limit:         s.cfg.DevCapture.Limit,
-		MaxBodyBytes:  s.cfg.DevCapture.MaxBodyBytes,
-		PersistToDisk: s.cfg.DevCapture.PersistToDisk,
-		OutputDir:     s.cfg.DevCapture.OutputDir,
+		Enabled:                  s.cfg.DevCapture.Enabled,
+		Limit:                    s.cfg.DevCapture.Limit,
+		MaxBodyBytes:             s.cfg.DevCapture.MaxBodyBytes,
+		PersistToDisk:            s.cfg.DevCapture.PersistToDisk,
+		OutputDir:                s.cfg.DevCapture.OutputDir,
+		CaptureUploadFileContent: s.cfg.DevCapture.CaptureUploadFileContent,
 	}
 }
 

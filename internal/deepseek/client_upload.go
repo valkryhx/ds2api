@@ -63,15 +63,8 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		return nil, err
 	}
 
-	capturePayload := map[string]any{
-		"filename":     filename,
-		"content_type": contentType,
-		"purpose":      purpose,
-		"bytes":        len(req.Data),
-	}
-	if modelType != "" {
-		capturePayload["model_type"] = modelType
-	}
+	includeUploadContent := c.capture != nil && c.capture.CaptureUploadFileContent()
+	capturePayload := buildUploadCapturePayload(filename, contentType, purpose, modelType, req.Data, includeUploadContent)
 	captureSession := c.capture.Start("deepseek_upload_file", DeepSeekUploadFileURL, a.AccountID, capturePayload)
 
 	attempts := 0
@@ -167,6 +160,22 @@ func (c *Client) UploadFile(ctx context.Context, a *auth.RequestAuth, req Upload
 		attempts++
 	}
 	return nil, errors.New("upload file failed")
+}
+
+func buildUploadCapturePayload(filename, contentType, purpose, modelType string, data []byte, includeContent bool) map[string]any {
+	payload := map[string]any{
+		"filename":     filename,
+		"content_type": contentType,
+		"purpose":      purpose,
+		"bytes":        len(data),
+	}
+	if modelType != "" {
+		payload["model_type"] = modelType
+	}
+	if includeContent {
+		payload["file_content"] = string(data)
+	}
+	return payload
 }
 
 func buildUploadMultipartBody(filename, contentType string, data []byte) ([]byte, string, error) {

@@ -82,7 +82,7 @@ func TestRecordCapturesImmediateRequestPayload(t *testing.T) {
 
 func TestNewFromSettingsUsesConfigValues(t *testing.T) {
 	enabled := true
-	s := NewFromSettings(Settings{Enabled: &enabled, Limit: 20, MaxBodyBytes: 4096})
+	s := NewFromSettings(Settings{Enabled: &enabled, Limit: 20, MaxBodyBytes: 4096, CaptureUploadFileContent: true})
 	if !s.Enabled() {
 		t.Fatal("expected enabled from settings")
 	}
@@ -92,6 +92,9 @@ func TestNewFromSettingsUsesConfigValues(t *testing.T) {
 	if s.MaxBodyBytes() != 4096 {
 		t.Fatalf("expected max body bytes 4096, got %d", s.MaxBodyBytes())
 	}
+	if !s.CaptureUploadFileContent() {
+		t.Fatal("expected upload file content capture from settings")
+	}
 }
 
 func TestNewFromSettingsEnvOverridesConfig(t *testing.T) {
@@ -99,6 +102,7 @@ func TestNewFromSettingsEnvOverridesConfig(t *testing.T) {
 	t.Setenv("DS2API_DEV_PACKET_CAPTURE", "false")
 	t.Setenv("DS2API_DEV_PACKET_CAPTURE_LIMIT", "3")
 	t.Setenv("DS2API_DEV_PACKET_CAPTURE_MAX_BODY_BYTES", "8192")
+	t.Setenv("DS2API_DEV_PACKET_CAPTURE_UPLOAD_FILE_CONTENT", "true")
 
 	s := NewFromSettings(Settings{Enabled: &enabled, Limit: 20, MaxBodyBytes: 4096})
 	if s.Enabled() {
@@ -109,6 +113,9 @@ func TestNewFromSettingsEnvOverridesConfig(t *testing.T) {
 	}
 	if s.MaxBodyBytes() != 8192 {
 		t.Fatalf("expected env max body bytes 8192, got %d", s.MaxBodyBytes())
+	}
+	if !s.CaptureUploadFileContent() {
+		t.Fatal("expected env to enable upload file content capture")
 	}
 }
 

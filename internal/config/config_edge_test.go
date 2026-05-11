@@ -233,11 +233,12 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 			"slow": "deepseek-reasoner",
 		},
 		DevCapture: DevCaptureConfig{
-			Enabled:       &enabled,
-			Limit:         20,
-			MaxBodyBytes:  4096,
-			PersistToDisk: &enabled,
-			OutputDir:     "logs/dev_captures",
+			Enabled:                  &enabled,
+			Limit:                    20,
+			MaxBodyBytes:             4096,
+			PersistToDisk:            &enabled,
+			OutputDir:                "logs/dev_captures",
+			CaptureUploadFileContent: true,
 		},
 		VercelSyncHash: "hash123",
 		VercelSyncTime: 1234567890,
@@ -279,6 +280,9 @@ func TestConfigJSONRoundtrip(t *testing.T) {
 	}
 	if decoded.DevCapture.OutputDir != "logs/dev_captures" {
 		t.Fatalf("unexpected dev capture output dir: %q", decoded.DevCapture.OutputDir)
+	}
+	if !decoded.DevCapture.CaptureUploadFileContent {
+		t.Fatal("expected dev capture upload file content flag")
 	}
 	if decoded.VercelSyncHash != "hash123" {
 		t.Fatalf("unexpected vercel sync hash: %q", decoded.VercelSyncHash)
@@ -352,11 +356,12 @@ func TestConfigCloneKeepsDevCapture(t *testing.T) {
 	enabled := true
 	cfg := Config{
 		DevCapture: DevCaptureConfig{
-			Enabled:       &enabled,
-			Limit:         7,
-			MaxBodyBytes:  1024,
-			PersistToDisk: &enabled,
-			OutputDir:     "logs/dev_captures",
+			Enabled:                  &enabled,
+			Limit:                    7,
+			MaxBodyBytes:             1024,
+			PersistToDisk:            &enabled,
+			OutputDir:                "logs/dev_captures",
+			CaptureUploadFileContent: true,
 		},
 	}
 	cloned := cfg.Clone()
@@ -373,6 +378,9 @@ func TestConfigCloneKeepsDevCapture(t *testing.T) {
 	}
 	if cloned.DevCapture.OutputDir != "logs/dev_captures" {
 		t.Fatalf("unexpected cloned dev capture output dir: %q", cloned.DevCapture.OutputDir)
+	}
+	if !cloned.DevCapture.CaptureUploadFileContent {
+		t.Fatal("expected cloned dev capture upload file content flag")
 	}
 }
 
@@ -586,6 +594,16 @@ func TestStoreCurrentInputFileCanDisableAndMarshal(t *testing.T) {
 	}
 	if rawCurrentInput["enabled"] != false || int(rawCurrentInput["min_chars"].(float64)) != 999 {
 		t.Fatalf("unexpected current_input_file output: %#v", rawCurrentInput)
+	}
+}
+
+func TestStoreDevCaptureSettingsCarriesUploadFileContentFlag(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_JSON", `{"keys":["k1"],"accounts":[],"dev_capture":{"enabled":true,"capture_upload_file_content":true}}`)
+	store := LoadStore()
+
+	settings := store.DevCaptureSettings()
+	if !settings.CaptureUploadFileContent {
+		t.Fatal("expected dev capture settings to carry upload file content flag")
 	}
 }
 

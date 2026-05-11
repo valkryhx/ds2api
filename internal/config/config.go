@@ -62,9 +62,10 @@ type CurrentInputFileConfig struct {
 }
 
 type DevCaptureConfig struct {
-	Enabled       *bool  `json:"enabled,omitempty"`
-	Limit         int    `json:"limit,omitempty"`
-	MaxBodyBytes  int    `json:"max_body_bytes,omitempty"`
-	PersistToDisk *bool  `json:"persist_to_disk,omitempty"`
-	OutputDir     string `json:"output_dir,omitempty"`
+	Enabled                  *bool  `json:"enabled,omitempty"`
+	Limit                    int    `json:"limit,omitempty"`
+	MaxBodyBytes             int    `json:"max_body_bytes,omitempty"`
+	PersistToDisk            *bool  `json:"persist_to_disk,omitempty"`
+	OutputDir                string `json:"output_dir,omitempty"`
+	CaptureUploadFileContent bool   `json:"capture_upload_file_content,omitempty"`
 }

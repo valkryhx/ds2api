@@ -22,11 +22,12 @@ const (
 )
 
 type Settings struct {
-	Enabled       *bool
-	Limit         int
-	MaxBodyBytes  int
-	PersistToDisk *bool
-	OutputDir     string
+	Enabled                  *bool
+	Limit                    int
+	MaxBodyBytes             int
+	PersistToDisk            *bool
+	OutputDir                string
+	CaptureUploadFileContent bool
 }
 
 type Entry struct {
@@ -42,13 +43,14 @@ type Entry struct {
 }
 
 type Store struct {
-	mu            sync.Mutex
-	enabled       bool
-	limit         int
-	maxBodyBytes  int
-	persistToDisk bool
-	outputDir     string
-	items         []Entry
+	mu                       sync.Mutex
+	enabled                  bool
+	limit                    int
+	maxBodyBytes             int
+	persistToDisk            bool
+	outputDir                string
+	captureUploadFileContent bool
+	items                    []Entry
 }
 
 type Session struct {
@@ -133,13 +135,18 @@ func NewFromSettings(settings Settings) *Store {
 	if raw := strings.TrimSpace(os.Getenv("DS2API_DEV_PACKET_CAPTURE_OUTPUT_DIR")); raw != "" {
 		outputDir = raw
 	}
+	captureUploadFileContent := settings.CaptureUploadFileContent
+	if raw, ok := os.LookupEnv("DS2API_DEV_PACKET_CAPTURE_UPLOAD_FILE_CONTENT"); ok {
+		captureUploadFileContent = parseBool(raw)
+	}
 	return &Store{
-		enabled:       enabled,
-		limit:         limit,
-		maxBodyBytes:  maxBodyBytes,
-		persistToDisk: persistToDisk,
-		outputDir:     outputDir,
-		items:         make([]Entry, 0, limit),
+		enabled:                  enabled,
+		limit:                    limit,
+		maxBodyBytes:             maxBodyBytes,
+		persistToDisk:            persistToDisk,
+		outputDir:                outputDir,
+		captureUploadFileContent: captureUploadFileContent,
+		items:                    make([]Entry, 0, limit),
 	}
 }
 
@@ -187,6 +194,13 @@ func (s *Store) OutputDir() string {
 		return defaultOutputDir
 	}
 	return s.outputDir
+}
+
+func (s *Store) CaptureUploadFileContent() bool {
+	if s == nil {
+		return false
+	}
+	return s.captureUploadFileContent
 }
 
 func (s *Store) Snapshot() []Entry {

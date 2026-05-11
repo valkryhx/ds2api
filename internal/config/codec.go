@@ -50,7 +50,7 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if c.CurrentInputFile.Enabled != nil || c.CurrentInputFile.MinChars != 0 {
 		m["current_input_file"] = c.CurrentInputFile
 	}
-	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 || c.DevCapture.PersistToDisk != nil || strings.TrimSpace(c.DevCapture.OutputDir) != "" {
+	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 || c.DevCapture.PersistToDisk != nil || strings.TrimSpace(c.DevCapture.OutputDir) != "" || c.DevCapture.CaptureUploadFileContent {
 		m["dev_capture"] = c.DevCapture
 	}
 	if c.VercelSyncHash != "" {
@@ -160,11 +160,12 @@ func (c Config) Clone() Config {
 			MinChars: c.CurrentInputFile.MinChars,
 		},
 		DevCapture: DevCaptureConfig{
-			Enabled:       cloneBoolPtr(c.DevCapture.Enabled),
-			Limit:         c.DevCapture.Limit,
-			MaxBodyBytes:  c.DevCapture.MaxBodyBytes,
-			PersistToDisk: cloneBoolPtr(c.DevCapture.PersistToDisk),
-			OutputDir:     c.DevCapture.OutputDir,
+			Enabled:                  cloneBoolPtr(c.DevCapture.Enabled),
+			Limit:                    c.DevCapture.Limit,
+			MaxBodyBytes:             c.DevCapture.MaxBodyBytes,
+			PersistToDisk:            cloneBoolPtr(c.DevCapture.PersistToDisk),
+			OutputDir:                c.DevCapture.OutputDir,
+			CaptureUploadFileContent: c.DevCapture.CaptureUploadFileContent,
 		},
 		VercelSyncHash:   c.VercelSyncHash,
 		VercelSyncTime:   c.VercelSyncTime,

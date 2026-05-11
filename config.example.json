@@ -48,7 +48,8 @@
     "limit": 20,
     "max_body_bytes": 2097152,
     "persist_to_disk": true,
-    "output_dir": "logs/dev_captures"
+    "output_dir": "logs/dev_captures",
+    "capture_upload_file_content": false
   },
   "claude_model_mapping": {
     "fast": "deepseek-chat",
