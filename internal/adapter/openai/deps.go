@@ -31,6 +31,8 @@ type ConfigReader interface {
 	EmbeddingsProvider() string
 	CurrentInputFileEnabled() bool
 	CurrentInputFileMinChars() int
+	ThinkingInjectionEnabled() bool
+	ThinkingInjectionPrompt() string
 }
 
 var _ AuthResolver = (*auth.Resolver)(nil)

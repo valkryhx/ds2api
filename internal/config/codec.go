@@ -50,6 +50,9 @@ func (c Config) MarshalJSON() ([]byte, error) {
 	if c.CurrentInputFile.Enabled != nil || c.CurrentInputFile.MinChars != 0 {
 		m["current_input_file"] = c.CurrentInputFile
 	}
+	if c.ThinkingInjection.Enabled != nil || strings.TrimSpace(c.ThinkingInjection.Prompt) != "" {
+		m["thinking_injection"] = c.ThinkingInjection
+	}
 	if c.DevCapture.Enabled != nil || c.DevCapture.Limit > 0 || c.DevCapture.MaxBodyBytes > 0 || c.DevCapture.PersistToDisk != nil || strings.TrimSpace(c.DevCapture.OutputDir) != "" || c.DevCapture.CaptureUploadFileContent {
 		m["dev_capture"] = c.DevCapture
 	}
@@ -118,6 +121,10 @@ func (c *Config) UnmarshalJSON(b []byte) error {
 			if err := json.Unmarshal(v, &c.CurrentInputFile); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
 			}
+		case "thinking_injection":
+			if err := json.Unmarshal(v, &c.ThinkingInjection); err != nil {
+				return fmt.Errorf("invalid field %q: %w", k, err)
+			}
 		case "dev_capture":
 			if err := json.Unmarshal(v, &c.DevCapture); err != nil {
 				return fmt.Errorf("invalid field %q: %w", k, err)
@@ -158,6 +165,10 @@ func (c Config) Clone() Config {
 		CurrentInputFile: CurrentInputFileConfig{
 			Enabled:  cloneBoolPtr(c.CurrentInputFile.Enabled),
 			MinChars: c.CurrentInputFile.MinChars,
+		},
+		ThinkingInjection: ThinkingInjectionConfig{
+			Enabled: cloneBoolPtr(c.ThinkingInjection.Enabled),
+			Prompt:  c.ThinkingInjection.Prompt,
 		},
 		DevCapture: DevCaptureConfig{
 			Enabled:                  cloneBoolPtr(c.DevCapture.Enabled),

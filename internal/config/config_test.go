@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -119,5 +120,54 @@ func TestLoadConfigOnVercelWithoutConfigFileFallsBackToMemory(t *testing.T) {
 	}
 	if len(cfg.Keys) != 0 || len(cfg.Accounts) != 0 {
 		t.Fatalf("expected empty bootstrap config, got keys=%d accounts=%d", len(cfg.Keys), len(cfg.Accounts))
+	}
+}
+
+func TestConfigJSONRoundtripKeepsThinkingInjection(t *testing.T) {
+	enabled := false
+	cfg := Config{
+		ThinkingInjection: ThinkingInjectionConfig{
+			Enabled: &enabled,
+			Prompt:  "custom thinking prompt",
+		},
+	}
+
+	data, err := cfg.MarshalJSON()
+	if err != nil {
+		t.Fatalf("marshal error: %v", err)
+	}
+	if !strings.Contains(string(data), "thinking_injection") {
+		t.Fatalf("expected thinking_injection in json, got %s", string(data))
+	}
+
+	var decoded Config
+	if err := json.Unmarshal(data, &decoded); err != nil {
+		t.Fatalf("unmarshal error: %v", err)
+	}
+	if decoded.ThinkingInjection.Enabled == nil || *decoded.ThinkingInjection.Enabled {
+		t.Fatalf("unexpected enabled value: %#v", decoded.ThinkingInjection.Enabled)
+	}
+	if decoded.ThinkingInjection.Prompt != "custom thinking prompt" {
+		t.Fatalf("unexpected prompt: %q", decoded.ThinkingInjection.Prompt)
+	}
+}
+
+func TestStoreThinkingInjectionAccessors(t *testing.T) {
+	t.Setenv("DS2API_CONFIG_JSON", `{}`)
+	store := LoadStore()
+	if !store.ThinkingInjectionEnabled() {
+		t.Fatal("expected thinking injection enabled by default")
+	}
+	if got := store.ThinkingInjectionPrompt(); got != "" {
+		t.Fatalf("expected empty default prompt override, got %q", got)
+	}
+
+	t.Setenv("DS2API_CONFIG_JSON", `{"thinking_injection":{"enabled":false,"prompt":" custom prompt "}}`)
+	store = LoadStore()
+	if store.ThinkingInjectionEnabled() {
+		t.Fatal("expected thinking injection disabled from config")
+	}
+	if got := store.ThinkingInjectionPrompt(); got != "custom prompt" {
+		t.Fatalf("unexpected prompt: %q", got)
 	}
 }

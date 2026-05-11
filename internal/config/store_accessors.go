@@ -94,6 +94,21 @@ func (s *Store) CurrentInputFileMinChars() int {
 	return s.cfg.CurrentInputFile.MinChars
 }
 
+func (s *Store) ThinkingInjectionEnabled() bool {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.cfg.ThinkingInjection.Enabled == nil {
+		return true
+	}
+	return *s.cfg.ThinkingInjection.Enabled
+}
+
+func (s *Store) ThinkingInjectionPrompt() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return strings.TrimSpace(s.cfg.ThinkingInjection.Prompt)
+}
+
 func (s *Store) DevCaptureSettings() devcapture.Settings {
 	s.mu.RLock()
 	defer s.mu.RUnlock()

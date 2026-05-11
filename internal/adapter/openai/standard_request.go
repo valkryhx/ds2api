@@ -35,23 +35,25 @@ func normalizeOpenAIChatRequest(store ConfigReader, req map[string]any, traceID 
 	}
 	passThrough := collectOpenAIChatPassThrough(req)
 
-	return util.StandardRequest{
-		Surface:        "openai_chat",
-		RequestedModel: strings.TrimSpace(model),
-		ResolvedModel:  resolvedModel,
-		ResponseModel:  responseModel,
-		ModelType:      modelType,
-		Messages:       messagesRaw,
-		ToolsRaw:       req["tools"],
+	stdReq := util.StandardRequest{
+		Surface:         "openai_chat",
+		RequestedModel:  strings.TrimSpace(model),
+		ResolvedModel:   resolvedModel,
+		ResponseModel:   responseModel,
+		ModelType:       modelType,
+		Messages:        messagesRaw,
+		ToolsRaw:        req["tools"],
 		PromptTokenText: finalPrompt,
-		FinalPrompt:    finalPrompt,
-		ToolNames:      toolNames,
-		ToolChoice:     toolPolicy,
-		Stream:         util.ToBool(req["stream"]),
-		Thinking:       thinkingEnabled,
-		Search:         searchEnabled,
-		PassThrough:    passThrough,
-	}, nil
+		FinalPrompt:     finalPrompt,
+		ToolNames:       toolNames,
+		ToolChoice:      toolPolicy,
+		Stream:          util.ToBool(req["stream"]),
+		Thinking:        thinkingEnabled,
+		Search:          searchEnabled,
+		PassThrough:     passThrough,
+	}
+	stdReq, _ = applyThinkingInjection(store, stdReq, traceID)
+	return stdReq, nil
 }
 
 func normalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, traceID string) (util.StandardRequest, error) {
@@ -94,23 +96,25 @@ func normalizeOpenAIResponsesRequest(store ConfigReader, req map[string]any, tra
 	}
 	passThrough := collectOpenAIChatPassThrough(req)
 
-	return util.StandardRequest{
-		Surface:        "openai_responses",
-		RequestedModel: model,
-		ResolvedModel:  resolvedModel,
-		ResponseModel:  model,
-		ModelType:      modelType,
-		Messages:       messagesRaw,
-		ToolsRaw:       req["tools"],
+	stdReq := util.StandardRequest{
+		Surface:         "openai_responses",
+		RequestedModel:  model,
+		ResolvedModel:   resolvedModel,
+		ResponseModel:   model,
+		ModelType:       modelType,
+		Messages:        messagesRaw,
+		ToolsRaw:        req["tools"],
 		PromptTokenText: finalPrompt,
-		FinalPrompt:    finalPrompt,
-		ToolNames:      toolNames,
-		ToolChoice:     toolPolicy,
-		Stream:         util.ToBool(req["stream"]),
-		Thinking:       thinkingEnabled,
-		Search:         searchEnabled,
-		PassThrough:    passThrough,
-	}, nil
+		FinalPrompt:     finalPrompt,
+		ToolNames:       toolNames,
+		ToolChoice:      toolPolicy,
+		Stream:          util.ToBool(req["stream"]),
+		Thinking:        thinkingEnabled,
+		Search:          searchEnabled,
+		PassThrough:     passThrough,
+	}
+	stdReq, _ = applyThinkingInjection(store, stdReq, traceID)
+	return stdReq, nil
 }
 
 func collectOpenAIChatPassThrough(req map[string]any) map[string]any {

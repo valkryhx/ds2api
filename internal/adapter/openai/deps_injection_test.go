@@ -3,14 +3,16 @@ package openai
 import "testing"
 
 type mockOpenAIConfig struct {
-	aliases              map[string]string
-	wideInput            bool
-	toolMode             string
-	earlyEmit            string
-	responsesTTL         int
-	embedProv            string
-	currentInputEnabled  *bool
-	currentInputMinChars int
+	aliases                  map[string]string
+	wideInput                bool
+	toolMode                 string
+	earlyEmit                string
+	responsesTTL             int
+	embedProv                string
+	currentInputEnabled      *bool
+	currentInputMinChars     int
+	thinkingInjectionEnabled bool
+	thinkingInjectionPrompt  string
 }
 
 func (m mockOpenAIConfig) ModelAliases() map[string]string { return m.aliases }
@@ -27,7 +29,11 @@ func (m mockOpenAIConfig) CurrentInputFileEnabled() bool {
 	}
 	return *m.currentInputEnabled
 }
-func (m mockOpenAIConfig) CurrentInputFileMinChars() int { return m.currentInputMinChars }
+func (m mockOpenAIConfig) CurrentInputFileMinChars() int  { return m.currentInputMinChars }
+func (m mockOpenAIConfig) ThinkingInjectionEnabled() bool { return m.thinkingInjectionEnabled }
+func (m mockOpenAIConfig) ThinkingInjectionPrompt() string {
+	return m.thinkingInjectionPrompt
+}
 
 func TestNormalizeOpenAIChatRequestWithConfigInterface(t *testing.T) {
 	cfg := mockOpenAIConfig{

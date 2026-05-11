@@ -1,22 +1,23 @@
 package config
 
 type Config struct {
-	Keys             []string               `json:"keys,omitempty"`
-	Accounts         []Account              `json:"accounts,omitempty"`
-	ClaudeMapping    map[string]string      `json:"claude_mapping,omitempty"`
-	ClaudeModelMap   map[string]string      `json:"claude_model_mapping,omitempty"`
-	ModelAliases     map[string]string      `json:"model_aliases,omitempty"`
-	Admin            AdminConfig            `json:"admin,omitempty"`
-	Runtime          RuntimeConfig          `json:"runtime,omitempty"`
-	Compat           CompatConfig           `json:"compat,omitempty"`
-	Toolcall         ToolcallConfig         `json:"toolcall,omitempty"`
-	Responses        ResponsesConfig        `json:"responses,omitempty"`
-	Embeddings       EmbeddingsConfig       `json:"embeddings,omitempty"`
-	CurrentInputFile CurrentInputFileConfig `json:"current_input_file,omitempty"`
-	DevCapture       DevCaptureConfig       `json:"dev_capture,omitempty"`
-	VercelSyncHash   string                 `json:"_vercel_sync_hash,omitempty"`
-	VercelSyncTime   int64                  `json:"_vercel_sync_time,omitempty"`
-	AdditionalFields map[string]any         `json:"-"`
+	Keys              []string                `json:"keys,omitempty"`
+	Accounts          []Account               `json:"accounts,omitempty"`
+	ClaudeMapping     map[string]string       `json:"claude_mapping,omitempty"`
+	ClaudeModelMap    map[string]string       `json:"claude_model_mapping,omitempty"`
+	ModelAliases      map[string]string       `json:"model_aliases,omitempty"`
+	Admin             AdminConfig             `json:"admin,omitempty"`
+	Runtime           RuntimeConfig           `json:"runtime,omitempty"`
+	Compat            CompatConfig            `json:"compat,omitempty"`
+	Toolcall          ToolcallConfig          `json:"toolcall,omitempty"`
+	Responses         ResponsesConfig         `json:"responses,omitempty"`
+	Embeddings        EmbeddingsConfig        `json:"embeddings,omitempty"`
+	CurrentInputFile  CurrentInputFileConfig  `json:"current_input_file,omitempty"`
+	ThinkingInjection ThinkingInjectionConfig `json:"thinking_injection,omitempty"`
+	DevCapture        DevCaptureConfig        `json:"dev_capture,omitempty"`
+	VercelSyncHash    string                  `json:"_vercel_sync_hash,omitempty"`
+	VercelSyncTime    int64                   `json:"_vercel_sync_time,omitempty"`
+	AdditionalFields  map[string]any          `json:"-"`
 }
 
 type Account struct {
@@ -59,6 +60,11 @@ type EmbeddingsConfig struct {
 type CurrentInputFileConfig struct {
 	Enabled  *bool `json:"enabled,omitempty"`
 	MinChars int   `json:"min_chars,omitempty"`
+}
+
+type ThinkingInjectionConfig struct {
+	Enabled *bool  `json:"enabled,omitempty"`
+	Prompt  string `json:"prompt,omitempty"`
 }
 
 type DevCaptureConfig struct {

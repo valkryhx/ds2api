@@ -33,6 +33,10 @@
   "compat": {
     "wide_input_strict_output": true
   },
+  "thinking_injection": {
+    "enabled": true,
+    "prompt": ""
+  },
   "toolcall": {
     "mode": "feature_match",
     "early_emit_confidence": "high"
