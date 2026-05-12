@@ -22,8 +22,8 @@ const TOOL_CALL_MARKUP_ARGS_PATTERNS = [
 ];
 const TEXT_KV_NAME_PATTERN = /function\.name:\s*([a-zA-Z0-9_.-]+)/gi;
 const CALL_MARKER_PATTERN = /\[\s*(?:调用|call)\s+([a-zA-Z0-9_.-]+)\s*\]/gi;
-const DSML_TOOL_TAG_PREFIX_PATTERN = /<(?:\/?)(?:\||｜)DSML(?:\||｜)/i;
 const DSML_TOOL_TAG_PATTERN = /<(\/?)(?:\||｜)DSML(?:\||｜)(?:\s*(?:\||｜))*\s*(tool_calls|invoke|parameter)((?:[^<>]|\r|\n)*?)>/gi;
+const PREFIXED_TOOL_TAG_PATTERN = /<(\/?)\s*(?:([a-z0-9]+)\s*(?:[|｜_-])\s*)?(tool_calls|tool-calls|toolcalls|invoke|parameter)\b([^<>]*?)>/gi;
 const STANDALONE_CDATA_PATTERN = /^<!\[CDATA\[([\s\S]*?)\]\]>$/i;
 
 const {
@@ -493,13 +493,28 @@ function parseToolCallInput(v) {
 
 function normalizeDSMLToolCallMarkup(text) {
   const raw = toStringSafe(text);
-  if (!raw || !DSML_TOOL_TAG_PREFIX_PATTERN.test(raw)) {
+  if (!raw) {
     return raw;
   }
-  return raw.replace(DSML_TOOL_TAG_PATTERN, (_m, closing, tagName, rest) => {
+  const dsmlNormalized = raw.replace(DSML_TOOL_TAG_PATTERN, (_m, closing, tagName, rest) => {
     const suffix = normalizeDSMLToolTagSuffix(rest);
     return `<${closing ? '/' : ''}${tagName}${suffix}>`;
   });
+  return dsmlNormalized.replace(PREFIXED_TOOL_TAG_PATTERN, (m, closing, prefix, tagName, rest) => {
+    const canonical = canonicalToolMarkupTagName(tagName);
+    if (!prefix && canonical === tagName) {
+      return m;
+    }
+    return `<${closing ? '/' : ''}${canonical}${rest || ''}>`;
+  });
+}
+
+function canonicalToolMarkupTagName(tagName) {
+  const name = toStringSafe(tagName).toLowerCase();
+  if (name === 'tool-calls' || name === 'toolcalls') {
+    return 'tool_calls';
+  }
+  return name;
 }
 
 function normalizeDSMLToolTagSuffix(rest) {

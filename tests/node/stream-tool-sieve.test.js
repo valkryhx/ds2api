@@ -368,6 +368,30 @@ test('parseStandaloneToolCalls supports fullwidth DSML delimiters', () => {
   assert.equal(calls[0].input.command, 'pwd');
 });
 
+test('parseStandaloneToolCalls supports underscored DSML delimiters', () => {
+  const payload = [
+    '<dsml_tool_calls>',
+    '<dsml_invoke name="mcp__tavily__tavily_research">',
+    '<dsml_parameter name="input"><![CDATA[Research GenericAgent launcher]]></dsml_parameter>',
+    '<dsml_parameter name="model"><![CDATA[pro]]></dsml_parameter>',
+    '</dsml_invoke>',
+    '</dsml_tool_calls>',
+  ].join('');
+  const calls = parseStandaloneToolCalls(payload, ['mcp__tavily__tavily_research']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'mcp__tavily__tavily_research');
+  assert.equal(calls[0].input.input, 'Research GenericAgent launcher');
+  assert.equal(calls[0].input.model, 'pro');
+});
+
+test('parseStandaloneToolCalls supports arbitrary-prefixed tool markup', () => {
+  const payload = '<vendor_tool_calls><vendor_invoke name="Read"><vendor_parameter name="file_path">README.md</vendor_parameter></vendor_invoke></vendor_tool_calls>';
+  const calls = parseStandaloneToolCalls(payload, ['Read']);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'Read');
+  assert.equal(calls[0].input.file_path, 'README.md');
+});
+
 test('parseStandaloneToolCalls accepts mixed and trailing DSML delimiters', () => {
   const payload = '<|DSML｜tool_calls｜><｜DSML|invoke name="shell"><|DSML｜parameter name="command"><![CDATA[pwd]]></｜DSML|parameter></|DSML｜invoke></｜DSML|tool_calls｜>';
   const calls = parseStandaloneToolCalls(payload, ['functions.shell_command']);
@@ -391,4 +415,23 @@ test('sieve intercepts fullwidth DSML tool markup without raw leak', () => {
   assert.equal(calls[0].name, 'functions.shell_command');
   assert.equal(calls[0].input.command, 'pwd');
   assert.equal(leakedText.includes('DSML'), false);
+});
+
+test('sieve intercepts underscored DSML tool markup without raw leak', () => {
+  const events = runSieve(
+    [
+      '<dsml_tool_calls><dsml_invoke name="mcp__tavily__tavily_research">',
+      '<dsml_parameter name="input"><![CDATA[Research GenericAgent launcher]]></dsml_parameter>',
+      '<dsml_parameter name="model"><![CDATA[pro]]></dsml_parameter>',
+      '</dsml_invoke></dsml_tool_calls>',
+    ],
+    ['mcp__tavily__tavily_research'],
+  );
+  const leakedText = collectText(events);
+  const calls = events.filter((evt) => evt.type === 'tool_calls').flatMap((evt) => evt.calls || []);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].name, 'mcp__tavily__tavily_research');
+  assert.equal(calls[0].input.input, 'Research GenericAgent launcher');
+  assert.equal(calls[0].input.model, 'pro');
+  assert.equal(leakedText.includes('dsml_'), false);
 });

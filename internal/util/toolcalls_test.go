@@ -373,6 +373,42 @@ func TestParseToolCallsSupportsDSMLShell(t *testing.T) {
 	}
 }
 
+func TestParseToolCallsSupportsUnderscoredDSMLToolCalls(t *testing.T) {
+	text := `<dsml_tool_calls>
+<dsml_invoke name="mcp__tavily__tavily_research">
+<dsml_parameter name="input"><![CDATA[Research GenericAgent launcher]]></dsml_parameter>
+<dsml_parameter name="model"><![CDATA[pro]]></dsml_parameter>
+</dsml_invoke>
+</dsml_tool_calls>`
+	calls := ParseToolCalls(text, []string{"mcp__tavily__tavily_research"})
+	if len(calls) != 1 {
+		t.Fatalf("expected 1 underscored DSML call, got %#v", calls)
+	}
+	if calls[0].Name != "mcp__tavily__tavily_research" {
+		t.Fatalf("expected canonical tool name, got %#v", calls[0])
+	}
+	if calls[0].Input["input"] != "Research GenericAgent launcher" || calls[0].Input["model"] != "pro" {
+		t.Fatalf("unexpected underscored DSML arguments: %#v", calls[0].Input)
+	}
+}
+
+func TestParseToolCallsSupportsArbitraryPrefixedToolMarkup(t *testing.T) {
+	cases := []string{
+		`<abc|tool_calls><abc|invoke name="Read"><abc|parameter name="file_path">README.md</abc|parameter></abc|invoke></abc|tool_calls>`,
+		`<vendor_tool_calls><vendor_invoke name="Read"><vendor_parameter name="file_path">README.md</vendor_parameter></vendor_invoke></vendor_tool_calls>`,
+		`<agent - tool_calls><agent - invoke name="Read"><agent - parameter name="file_path">README.md</agent - parameter></agent - invoke></agent - tool_calls>`,
+	}
+	for _, text := range cases {
+		calls := ParseToolCalls(text, []string{"Read"})
+		if len(calls) != 1 {
+			t.Fatalf("expected 1 arbitrary-prefixed call for %q, got %#v", text, calls)
+		}
+		if calls[0].Name != "Read" || calls[0].Input["file_path"] != "README.md" {
+			t.Fatalf("unexpected arbitrary-prefixed parse result for %q: %#v", text, calls[0])
+		}
+	}
+}
+
 func TestParseToolCallsRejectsAllEmptyParameterPayload(t *testing.T) {
 	text := `<tool_calls><invoke name="Bash"><parameter name="command"></parameter><parameter name="description">   </parameter><parameter name="timeout"></parameter></invoke></tool_calls>`
 	res := ParseToolCallsDetailed(text, []string{"Bash"})

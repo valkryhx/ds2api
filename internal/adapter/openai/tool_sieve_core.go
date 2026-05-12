@@ -202,6 +202,11 @@ func findToolSegmentStart(state *toolStreamSieveState, s string, toolNames []str
 	if s == "" {
 		return -1
 	}
+	if tag, ok := util.FindToolMarkupTagOutsideIgnored(s, 0); ok && !tag.Closing && (tag.Name == "tool_calls" || tag.Name == "invoke") {
+		if !insideCodeFenceWithState(state, s[:tag.Start]) {
+			return tag.Start
+		}
+	}
 	lower := strings.ToLower(s)
 	offset := 0
 	for {

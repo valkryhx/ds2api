@@ -16,6 +16,51 @@ func TestProcessToolSieveHoldsDSMLTrailingPipeOpenTag(t *testing.T) {
 	}
 }
 
+func TestProcessToolSieveInterceptsUnderscoredDSMLToolBlock(t *testing.T) {
+	var state toolStreamSieveState
+	chunks := []string{
+		"<dsml_tool_calls>\n",
+		"  <dsml_invoke name=\"mcp__tavily__tavily_research\">\n",
+		"    <dsml_parameter name=\"input\"><![CDATA[Research GenericAgent launcher]]></dsml_parameter>\n",
+		"    <dsml_parameter name=\"model\"><![CDATA[pro]]></dsml_parameter>\n",
+		"  </dsml_invoke>\n",
+		"</dsml_tool_calls>",
+	}
+	var events []toolStreamEvent
+	for _, c := range chunks {
+		events = append(events, processToolSieveChunk(&state, c, []string{"mcp__tavily__tavily_research"})...)
+	}
+	events = append(events, flushToolSieve(&state, []string{"mcp__tavily__tavily_research"})...)
+
+	var text strings.Builder
+	var calls []struct {
+		Name  string
+		Input map[string]any
+	}
+	for _, evt := range events {
+		text.WriteString(evt.Content)
+		for _, tc := range evt.ToolCalls {
+			calls = append(calls, struct {
+				Name  string
+				Input map[string]any
+			}{Name: tc.Name, Input: tc.Input})
+		}
+	}
+
+	if len(calls) != 1 {
+		t.Fatalf("expected one underscored DSML tool call, got %d events=%#v", len(calls), events)
+	}
+	if calls[0].Name != "mcp__tavily__tavily_research" {
+		t.Fatalf("expected tavily research tool, got %#v", calls[0])
+	}
+	if calls[0].Input["input"] != "Research GenericAgent launcher" || calls[0].Input["model"] != "pro" {
+		t.Fatalf("unexpected underscored DSML arguments: %#v", calls[0].Input)
+	}
+	if text.Len() != 0 {
+		t.Fatalf("expected underscored DSML block not to leak text, got %q", text.String())
+	}
+}
+
 func TestFlushToolSieveRecoversCompleteInvokeFromMalformedDSMLClosing(t *testing.T) {
 	var state toolStreamSieveState
 	chunks := []string{

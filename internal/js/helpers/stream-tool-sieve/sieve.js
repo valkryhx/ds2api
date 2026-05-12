@@ -144,6 +144,13 @@ function splitSafeContentForToolDetection(s) {
   if (!text) {
     return ['', ''];
   }
+  const partialMarkupStart = findPartialToolMarkupStart(text);
+  if (partialMarkupStart >= 0) {
+    if (partialMarkupStart > 0) {
+      return [text.slice(0, partialMarkupStart), text.slice(partialMarkupStart)];
+    }
+    return ['', text];
+  }
   const suspiciousStart = findSuspiciousPrefixStart(text);
   if (suspiciousStart < 0) {
     return [text, ''];
@@ -172,13 +179,9 @@ function findToolSegmentStart(s) {
     return -1;
   }
   const lower = s.toLowerCase();
-  const dsmlStart = s.search(/<(?:\||｜)dsml(?:\||｜)(?:\s*(?:\||｜))*\s*tool_calls/i);
-  if (dsmlStart >= 0 && !insideCodeFence(s.slice(0, dsmlStart))) {
-    return dsmlStart;
-  }
-  const canonicalStart = lower.indexOf('<tool_calls');
-  if (canonicalStart >= 0 && !insideCodeFence(s.slice(0, canonicalStart))) {
-    return canonicalStart;
+  const markupStart = findToolMarkupStart(s);
+  if (markupStart >= 0 && !insideCodeFence(s.slice(0, markupStart))) {
+    return markupStart;
   }
   const keywords = ['tool_calls', 'function.name:', '[tool_call_history]'];
   let offset = 0;
@@ -209,6 +212,43 @@ function findToolSegmentStart(s) {
     }
     offset = keyIdx + matchedKeyword.length;
   }
+}
+
+function findToolMarkupStart(s) {
+  const text = s || '';
+  const patterns = [
+    /<(?:\||｜)dsml(?:\||｜)(?:\s*(?:\||｜))*\s*(?:tool_calls|invoke)/i,
+    /<\s*(?:[a-z0-9]+\s*(?:[|｜_-])\s*)?(?:tool_calls|tool-calls|toolcalls|invoke)\b/i,
+  ];
+  let best = -1;
+  for (const pattern of patterns) {
+    const idx = text.search(pattern);
+    if (idx >= 0 && (best < 0 || idx < best)) {
+      best = idx;
+    }
+  }
+  return best;
+}
+
+function findPartialToolMarkupStart(s) {
+  const text = s || '';
+  const idx = text.lastIndexOf('<');
+  if (idx < 0) {
+    return -1;
+  }
+  const tail = text.slice(idx);
+  if (tail.includes('>')) {
+    return -1;
+  }
+  return isPartialToolMarkupPrefix(tail) ? idx : -1;
+}
+
+function isPartialToolMarkupPrefix(tail) {
+  const text = (tail || '').toLowerCase();
+  if (!text || text[0] !== '<') {
+    return false;
+  }
+  return /^<\/?(?:\|?d?s?m?l?|[a-z0-9]*\s*(?:[|｜_-])?\s*(?:t?o?o?l?_?c?a?l?l?s?|i?n?v?o?k?e?|p?a?r?a?m?e?t?e?r?))?$/.test(text);
 }
 
 function consumeToolCapture(state, toolNames) {
@@ -299,6 +339,7 @@ function looksLikeToolMarkupCapture(text) {
   const lower = (text || '').toLowerCase();
   return lower.includes('<|dsml|')
     || lower.includes('<｜dsml｜')
+    || /<\s*[a-z0-9]+\s*(?:[|｜_-])\s*(?:tool_calls|tool-calls|toolcalls|invoke|parameter)\b/i.test(text || '')
     || lower.includes('<tool_calls')
     || lower.includes('<invoke');
 }
