@@ -21,6 +21,15 @@
 - `./tests/scripts/check-refactor-line-gate.sh`: enforce JS/entry file line-count gates.
 - `./tests/scripts/check-stage6-manual-smoke.sh`: verify release smoke-check metadata.
 
+## Debugging Notes
+- Dev capture logs live under `logs/dev_captures/`; align timestamps across `openai_inbound.jsonl`, `deepseek_upload_file.jsonl`, `deepseek_completion.jsonl`, and `openai_tool_use.jsonl`.
+- For OpenAI-chain "no output" issues: check whether DeepSeek emitted only `THINK`, emitted `RESPONSE` text with DSML/XML, or produced parsed entries in `openai_tool_use.jsonl`.
+- `openai_inbound.jsonl` shows client messages/tools; `deepseek_upload_file.jsonl` shows uploaded `DS2API_HISTORY.txt`; `deepseek_completion.jsonl` shows raw DeepSeek SSE; `openai_tool_use.jsonl` proves tool-call parsing succeeded.
+- Tool-call parser hot spots: `internal/util/toolcalls_scan.go`, `toolcalls_parse.go`, `toolcalls_parse_markup.go`, `toolcalls_dsml.go`.
+- OpenAI stream interception hot spots: `internal/adapter/openai/tool_sieve_*.go`, `chat_stream_runtime.go`, `handler_toolcall_format.go`.
+- Vercel/Node parity hot spots: `internal/js/helpers/stream-tool-sieve/*`, `internal/js/chat-stream/vercel_stream.js`, `tests/node/stream-tool-sieve.test.js`, `tests/node/chat-stream.test.js`.
+- For tool-call regressions, run `go test ./internal/util ./internal/adapter/openai -count=1` plus `node --test tests/node/stream-tool-sieve.test.js`.
+
 ## Coding Style & Naming Conventions
 - Go: run `gofmt` before commit; keep packages lowercase; keep tests in `*_test.go`.
 - JavaScript/React: follow existing functional-component style in `webui/src/`.
@@ -37,6 +46,7 @@
 
 ## Commit & Pull Request Guidelines
 - Use semantic prefixes seen in history: `feat:`, `fix:`, `docs:`, `refactor:`, `chore:`.
+- Git commit messages should use Chinese by default unless the user explicitly requests another language.
 - Branch naming convention: `feature/<topic>` or `fix/<topic>`.
 - PRs should include: change type, concise description, and test evidence (commands run/results).
 - If `webui/` is modified, ensure `npm run build --prefix webui` passes before requesting review.
