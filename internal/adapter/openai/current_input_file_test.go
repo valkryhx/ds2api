@@ -155,6 +155,48 @@ func TestApplyCurrentInputFileUploadsTranscriptAndShrinksPrompt(t *testing.T) {
 	}
 }
 
+func TestApplyCurrentInputFileSkipsClaudeCodeTitleGeneration(t *testing.T) {
+	ds := &currentInputDSStub{}
+	h := &Handler{
+		Store: currentInputConfigStub{mockOpenAIConfig: mockOpenAIConfig{wideInput: true}, enabled: true, minChars: 0},
+		DS:    ds,
+	}
+	titlePrompt := `You are Claude Code, Anthropic's official CLI for Claude.
+Generate a concise, sentence-case title (3-7 words) that captures the main topic or goal of this coding session. The title should be clear enough that the user recognizes the session in a list. Use sentence case: capitalize only the first word and proper nouns.
+
+Return JSON with a single "title" field.
+
+Good examples:
+{"title": "Fix login button on mobile"}`
+	stdReq := util.StandardRequest{
+		Surface:        "openai_chat",
+		RequestedModel: "deepseek-chat",
+		ResolvedModel:  "deepseek-chat",
+		ResponseModel:  "deepseek-chat",
+		Messages: []any{
+			map[string]any{"role": "system", "content": titlePrompt},
+			map[string]any{"role": "user", "content": "你忽略了一个条件 那就是可以用手区分形状"},
+		},
+		FinalPrompt:     "original title prompt",
+		PromptTokenText: "original title prompt",
+		ToolChoice:      util.DefaultToolChoicePolicy(),
+	}
+
+	out, err := h.applyCurrentInputFile(context.Background(), &auth.RequestAuth{DeepSeekToken: "token"}, stdReq)
+	if err != nil {
+		t.Fatalf("applyCurrentInputFile returned error: %v", err)
+	}
+	if ds.uploadCalled {
+		t.Fatalf("expected title generation request to skip DS2API_HISTORY upload, got upload %#v", ds.uploadReq)
+	}
+	if out.CurrentInputFileApplied || out.HistoryText != "" || len(out.RefFileIDs) != 0 {
+		t.Fatalf("expected current input file to remain unapplied, got applied=%v history=%q refs=%#v", out.CurrentInputFileApplied, out.HistoryText, out.RefFileIDs)
+	}
+	if out.FinalPrompt != stdReq.FinalPrompt || out.PromptTokenText != stdReq.PromptTokenText {
+		t.Fatalf("expected prompt fields unchanged, got final=%q token=%q", out.FinalPrompt, out.PromptTokenText)
+	}
+}
+
 func TestChatCompletionsAppliesCurrentInputFileBeforeCompletion(t *testing.T) {
 	ds := &currentInputDSStub{}
 	h := &Handler{

@@ -27,6 +27,9 @@ func (h *Handler) applyCurrentInputFile(ctx context.Context, a *auth.RequestAuth
 	if stdReq.CurrentInputFileApplied || !h.Store.CurrentInputFileEnabled() {
 		return stdReq, nil
 	}
+	if isClaudeCodeTitleGenerationRequest(stdReq.Messages) {
+		return stdReq, nil
+	}
 	_, latestUserText := latestUserInputForCurrentInputFile(stdReq.Messages)
 	if strings.TrimSpace(latestUserText) == "" {
 		return stdReq, nil
@@ -82,6 +85,26 @@ func mapCurrentInputFileError(err error) (int, string) {
 		return http.StatusOK, ""
 	}
 	return http.StatusInternalServerError, err.Error()
+}
+
+func isClaudeCodeTitleGenerationRequest(messages []any) bool {
+	for _, raw := range messages {
+		msg, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		role := strings.ToLower(strings.TrimSpace(asString(msg["role"])))
+		if role != "system" && role != "developer" {
+			continue
+		}
+		text := strings.ToLower(normalizeOpenAIContentForPrompt(msg["content"]))
+		if strings.Contains(text, "generate a concise, sentence-case title") &&
+			strings.Contains(text, "captures the main topic or goal of this coding session") &&
+			strings.Contains(text, `return json with a single "title" field`) {
+			return true
+		}
+	}
+	return false
 }
 
 func latestUserInputForCurrentInputFile(messages []any) (int, string) {

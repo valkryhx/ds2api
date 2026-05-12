@@ -144,13 +144,13 @@ func TestPoolStatusRecommendedConcurrencyDefault(t *testing.T) {
 	pool := newPoolForTest(t, "")
 	status := pool.Status()
 
-	if got, ok := status["max_inflight_per_account"].(int); !ok || got != 2 {
+	if got, ok := status["max_inflight_per_account"].(int); !ok || got != 1 {
 		t.Fatalf("unexpected max_inflight_per_account: %#v", status["max_inflight_per_account"])
 	}
-	if got, ok := status["recommended_concurrency"].(int); !ok || got != 4 {
+	if got, ok := status["recommended_concurrency"].(int); !ok || got != 2 {
 		t.Fatalf("unexpected recommended_concurrency: %#v", status["recommended_concurrency"])
 	}
-	if got, ok := status["max_queue_size"].(int); !ok || got != 4 {
+	if got, ok := status["max_queue_size"].(int); !ok || got != 2 {
 		t.Fatalf("unexpected max_queue_size: %#v", status["max_queue_size"])
 	}
 }

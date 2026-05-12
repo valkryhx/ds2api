@@ -362,6 +362,66 @@ func TestHandleStreamHintInputExceedsLimitEmitsErrorFrame(t *testing.T) {
 	}
 }
 
+func TestHandleStreamParallelChatLimitEmits429ErrorFrame(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`event: hint`,
+		`data: {"type":"error","content":"有消息正在生成，请稍后再试","clear_response":true,"finish_reason":"parallel_chat_limit"}`,
+		`event: close`,
+		`data: {"click_behavior":"retry","auto_resume":false}`,
+	)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+
+	h.handleStream(rec, req, resp, "cid-parallel-limit", "deepseek-chat", "prompt", false, false, nil)
+
+	frames, done := parseSSEDataFrames(t, rec.Body.String())
+	if !done {
+		t.Fatalf("expected [DONE], body=%s", rec.Body.String())
+	}
+	if streamFinishReason(frames) != "" {
+		t.Fatalf("expected no normal finish frame after upstream error, body=%s", rec.Body.String())
+	}
+	var errObj map[string]any
+	var statusCode float64
+	for _, frame := range frames {
+		if errFrame, ok := frame["error"].(map[string]any); ok {
+			errObj = errFrame
+			statusCode, _ = frame["status_code"].(float64)
+			break
+		}
+	}
+	if statusCode != http.StatusTooManyRequests {
+		t.Fatalf("expected stream status_code=429, got %#v body=%s", statusCode, rec.Body.String())
+	}
+	if asString(errObj["code"]) != "parallel_chat_limit" {
+		t.Fatalf("expected parallel_chat_limit code, got %#v body=%s", errObj, rec.Body.String())
+	}
+	if asString(errObj["type"]) != "rate_limit_error" {
+		t.Fatalf("expected rate_limit_error type, got %#v body=%s", errObj, rec.Body.String())
+	}
+}
+
+func TestHandleNonStreamParallelChatLimitReturns429(t *testing.T) {
+	h := &Handler{}
+	resp := makeSSEHTTPResponse(
+		`event: hint`,
+		`data: {"type":"error","content":"有消息正在生成，请稍后再试","clear_response":true,"finish_reason":"parallel_chat_limit"}`,
+		`event: close`,
+		`data: {"click_behavior":"none","auto_resume":false}`,
+	)
+	rec := httptest.NewRecorder()
+
+	h.handleNonStream(rec, context.Background(), resp, "cid-parallel-limit", "deepseek-chat", "prompt", false, nil)
+
+	if rec.Code != http.StatusTooManyRequests {
+		t.Fatalf("expected 429 for parallel_chat_limit, got %d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"code":"parallel_chat_limit"`) {
+		t.Fatalf("expected parallel_chat_limit code, body=%s", rec.Body.String())
+	}
+}
+
 func TestHandleNonStreamUnknownToolIntercepted(t *testing.T) {
 	h := &Handler{}
 	resp := makeSSEHTTPResponse(

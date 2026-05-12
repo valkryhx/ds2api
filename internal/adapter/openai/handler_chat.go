@@ -95,10 +95,7 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 	_ = ctx
 	result := sse.CollectStream(resp, thinkingEnabled, true)
 	if result.ErrorMessage != "" {
-		status := http.StatusBadGateway
-		if result.ErrorCode == "input_exceeds_limit" {
-			status = http.StatusRequestEntityTooLarge
-		}
+		status := openAIUpstreamSSEErrorStatus(result.ErrorCode)
 		writeOpenAIErrorWithCode(w, status, result.ErrorMessage, result.ErrorCode)
 		return
 	}
@@ -132,6 +129,17 @@ func (h *Handler) handleNonStream(w http.ResponseWriter, ctx context.Context, re
 	})
 	respBody := openaifmt.BuildChatCompletion(completionID, model, finalPrompt, finalThinking, finalText, toolNames, firstOptionalValue(toolsRaw))
 	writeJSON(w, http.StatusOK, respBody)
+}
+
+func openAIUpstreamSSEErrorStatus(code string) int {
+	switch strings.TrimSpace(code) {
+	case "input_exceeds_limit":
+		return http.StatusRequestEntityTooLarge
+	case "parallel_chat_limit":
+		return http.StatusTooManyRequests
+	default:
+		return http.StatusBadGateway
+	}
 }
 
 func (h *Handler) handleStream(w http.ResponseWriter, r *http.Request, resp *http.Response, completionID, model, finalPrompt string, thinkingEnabled, searchEnabled bool, toolNames []string, toolsRaw ...any) {

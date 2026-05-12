@@ -164,7 +164,7 @@ func (s *Store) RuntimeAccountMaxInflight() int {
 			return n
 		}
 	}
-	return 2
+	return 1
 }
 
 func (s *Store) RuntimeAccountMaxQueue(defaultSize int) int {

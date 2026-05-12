@@ -108,10 +108,12 @@ func (s *chatStreamRuntime) sendErrorChunk(message, code string) {
 	if code == "" {
 		code = "upstream_error"
 	}
+	status := openAIUpstreamSSEErrorStatus(code)
 	s.sendChunk(map[string]any{
+		"status_code": status,
 		"error": map[string]any{
 			"message": msg,
-			"type":    "invalid_request_error",
+			"type":    openAIErrorType(status),
 			"code":    code,
 			"param":   nil,
 		},
@@ -121,6 +123,8 @@ func (s *chatStreamRuntime) sendErrorChunk(message, code string) {
 func (s *chatStreamRuntime) finalize(finishReason string) {
 	if strings.TrimSpace(s.upstreamErr) != "" && (finishReason == "length" || finishReason == "content_filter") {
 		s.sendErrorChunk(s.upstreamErr, s.upstreamErrCode)
+		s.sendDone()
+		return
 	}
 	finalThinking := s.thinking.String()
 	finalText := s.text.String()

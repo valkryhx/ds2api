@@ -39,7 +39,7 @@ func maxInflightFromEnv() int {
 			return n
 		}
 	}
-	return 2
+	return 1
 }
 
 func defaultRecommendedConcurrency(accountCount, maxInflightPerAccount int) int {
@@ -47,7 +47,7 @@ func defaultRecommendedConcurrency(accountCount, maxInflightPerAccount int) int 
 		return 0
 	}
 	if maxInflightPerAccount <= 0 {
-		maxInflightPerAccount = 2
+		maxInflightPerAccount = 1
 	}
 	return accountCount * maxInflightPerAccount
 }
